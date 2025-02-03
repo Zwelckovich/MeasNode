@@ -4,115 +4,55 @@
   <meta charset="UTF-8">
   <title>Web-Based Node Editor</title>
   <style>
+    /* Global reset and base styles */
     body {
       margin: 0;
       font-family: sans-serif;
       display: flex;
       height: 100vh;
       overflow: hidden;
+      background-color: #eee;
     }
-    /* Sidebar for node library */
+    /* Sidebar (left menu bar) */
     #sidebar {
-      width: 220px;
+      width: 120px;  /* 100px button width + 20px extra */
       background: #f0f0f0;
       border-right: 1px solid #ccc;
-      padding: 10px;
+      padding: 10px 0; /* vertical padding only */
       box-sizing: border-box;
       overflow-y: auto;
+      position: relative;
     }
-    #library {
-      list-style-type: none;
-      padding: 0;
-      margin: 0;
+    /* Uniform button sizes for Library and Start buttons */
+    #libraryButton,
+    #startBtn {
+      width: 100px;
+      height: 30px;
+      display: block;
+      margin: 0 auto;
     }
-    #library li {
-      padding: 5px;
-      margin: 5px 0;
-      background: #ddd;
-      border: 1px solid #ccc;
-      cursor: move;
+    /* Spacing: Library button has margin-bottom, Start button has margin-top */
+    #libraryButton {
+      background-color: orange;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-bottom: 10px;
     }
-    /* Canvas area where nodes are placed */
+    #startBtn {
+      background: #3399ff;
+      border: none;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    /* Canvas area */
     #canvas {
       flex: 1;
       position: relative;
       background: #222;
       overflow: auto;
-    }
-    /* Each node is a positioned container */
-    .node {
-      position: absolute;
-      width: 200px;
-      min-height: 120px;
-      background: #444;
-      border: 2px solid transparent;
-      border-radius: 5px;
-      color: white;
-      padding: 10px 10px 10px 30px;  /* extra left padding for input anchors */
-      box-sizing: border-box;
-      cursor: move;
-      user-select: none;
-    }
-    /* When selected, a blue border is shown */
-    .node.selected {
-      border-color: blue;
-    }
-    .node strong {
-      display: block;
-      text-align: center;
-      margin-bottom: 5px;
-    }
-    .parameters {
-      margin-top: 5px;
-    }
-    .parameters input,
-    .parameters select {
-      width: 100%;
-      box-sizing: border-box;
-      margin: 2px 0;
-    }
-    /* Anchor points for wiring */
-    .anchor {
-      position: absolute;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #00aa00; /* default input color */
-      border: 2px solid #fff;
-      cursor: pointer;
-    }
-    /* Output anchors will be on the right and in red */
-    .anchor.output {
-      background: #aa0000;
-    }
-    /* Position input anchors on the left */
-    .anchor.input {
-      left: -8px;
-    }
-    /* Position output anchors on the right */
-    .anchor.output {
-      right: -8px;
-    }
-    /* Context menu style */
-    .context-menu {
-      position: absolute;
-      background: #fff;
-      border: 1px solid #ccc;
-      z-index: 1000;
-      padding: 5px;
-      box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-    }
-    .context-menu ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    .context-menu ul li {
-      padding: 5px 10px;
-      cursor: pointer;
-    }
-    .context-menu ul li:hover {
-      background: #eee;
     }
     /* SVG overlay for wiring */
     #svgOverlay {
@@ -123,21 +63,24 @@
       width: 100%;
       height: 100%;
     }
+    /* (Other CSS for nodes, anchors, etc., is defined in app.js) */
   </style>
 </head>
 <body>
+  <!-- Sidebar with Library and Start buttons -->
   <div id="sidebar">
-    <h3>Library</h3>
-    <ul id="library">
-      <!-- Library items will be added dynamically -->
-    </ul>
-    <button id="startBtn" style="width:100%; padding:10px; background:#3399ff; border:none; color:white; font-weight:bold; cursor:pointer;">Start</button>
+    <button id="libraryButton">Library</button>
+    <button id="startBtn">Start</button>
   </div>
+  
+  <!-- Canvas for node editor -->
   <div id="canvas">
-    <!-- SVG overlay for wires -->
     <svg id="svgOverlay"></svg>
   </div>
-
+  
+  <!-- Do not include a library popup here – it will be created dynamically by app.js -->
+  
+  <!-- Include jQuery and app.js -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

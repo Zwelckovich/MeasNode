@@ -7,29 +7,29 @@ app = Flask(__name__)
 # ---------------- Base Node Class ------------------
 class BaseNode:
     """
-    Base class for all nodes. Each node module should subclass this.
+    Base class for all nodes.
+    Each node module should subclass this.
     """
     title = "Base Node"
-    inputs = []   # e.g., [{"name": "input1", "type": "int"}]
-    outputs = []  # e.g., [{"name": "output", "type": "int"}]
-    parameters_def = []  # A list of parameter definitions
+    category = "Uncategorized"  # New attribute for categorization.
+    inputs = []      # Example: [{"name": "input1", "type": "int"}]
+    outputs = []     # Example: [{"name": "output", "type": "int"}]
+    parameters_def = []  # Example: [{"name": "value", "type": "int", "default": 42}]
 
     def __init__(self, node_id):
         self.node_id = node_id
-        self.input_connections = {}  # e.g., { "input1": (source_node, "output") }
         self.parameters = {}
+        self.input_connections = {}  # To be filled as { input_name: (source_node, "output") }
 
     def execute(self, **inputs):
-        """
-        Override in subclasses to process inputs and produce an output.
-        """
+        """Override this method in subclasses to implement node logic."""
         return None
 
-# ---------------- Load Node Modules ------------------
+# ---------------- Node Modules Loader ------------------
 def load_node_modules():
     """
-    Scans the 'modules' folder for .py files (ignoring __init__.py) and imports them.
-    Each module is expected to define a class named "Node" that inherits from BaseNode.
+    Scans the 'modules' folder for Python files (ignoring __init__.py) and imports them.
+    Each module should define a class named "Node" that is a subclass of BaseNode.
     Returns a dictionary mapping each node's title to its class.
     """
     node_classes = {}
@@ -49,11 +49,8 @@ def load_node_modules():
             except Exception as e:
                 print(f"Error loading module {fname}: {e}")
                 continue
-            # Each module should define a class named "Node"
             if hasattr(mod, "Node"):
                 cls = mod.Node
-                if cls.title in node_classes:
-                    print(f"Warning: Duplicate title found ({cls.title}). Module {fname} may be overriding an existing node.")
                 node_classes[cls.title] = cls
     return node_classes
 
@@ -61,40 +58,20 @@ def load_node_modules():
 @app.route("/api/nodes", methods=["GET"])
 def api_nodes():
     """
-    Returns a JSON array of node definitions.
-    Each definition is an object with at least:
+    Returns a JSON array of available node definitions.
+    Each node definition includes:
       - title: the node title (unique)
-      - parameters: the parameter definitions (from the node class's parameters_def attribute)
-      - inputs: the list of input definitions
-      - outputs: the list of output definitions
-
-    Example response:
-    [
-      {
-        "title": "Integer Node",
-        "parameters": [{"name": "value", "type": "int", "default": 42}],
-        "inputs": [],
-        "outputs": [{"name": "output", "type": "int"}]
-      },
-      {
-        "title": "BasicMath Node",
-        "parameters": [{"name": "operation", "type": "dropdown", "options": ["add", "subtract", "multiply", "divide"], "default": "add"}],
-        "inputs": [{"name": "a", "type": "int"}, {"name": "b", "type": "int"}],
-        "outputs": [{"name": "output", "type": "int"}]
-      },
-      {
-        "title": "Result Node",
-        "parameters": [],
-        "inputs": [{"name": "input", "type": "int"}],
-        "outputs": []
-      }
-    ]
+      - category: the node category (for grouping in the library)
+      - parameters: the parameter definitions (from parameters_def)
+      - inputs: the input definitions
+      - outputs: the output definitions
     """
     node_classes = load_node_modules()
     definitions = []
     for title, cls in node_classes.items():
         definitions.append({
             "title": title,
+            "category": getattr(cls, "category", "Uncategorized"),
             "parameters": getattr(cls, "parameters_def", []),
             "inputs": getattr(cls, "inputs", []),
             "outputs": getattr(cls, "outputs", [])
@@ -104,11 +81,22 @@ def api_nodes():
 # ---------------- API Endpoint: /api/execute ------------------
 @app.route("/api/execute", methods=["POST"])
 def api_execute():
+    """
+    Expects a JSON payload describing the workflow.
+    The workflow JSON should have a "nodes" array, where each node is defined with:
+      - id: unique node identifier
+      - type: the node title (to look up the corresponding Python class)
+      - parameters: parameter values (as entered by the user)
+      - connections: a mapping of input names to the source node IDs.
+    
+    This endpoint instantiates the nodes, sets up connections, recursively evaluates the nodes,
+    and returns the results of each "Result Node" in a JSON object.
+    """
     workflow = request.json
     nodes = {}
     node_classes = load_node_modules()
 
-    # Instantiate nodes based on the workflow payload.
+    # Instantiate nodes based on workflow payload.
     for node_data in workflow.get("nodes", []):
         node_type = node_data.get("type")
         NodeClass = node_classes.get(node_type)
@@ -119,15 +107,15 @@ def api_execute():
 
     # Set up connections.
     for node_data in workflow.get("nodes", []):
-        node_id = node_data["id"]
+        node_id = node_data.get("id")
         node_instance = nodes.get(node_id)
-        for input_name, source_id in node_data.get("connections", {}).items():
-            if source_id in nodes:
-                source_node = nodes[source_id]
+        for input_name, source_node_id in node_data.get("connections", {}).items():
+            if source_node_id in nodes:
+                source_node = nodes[source_node_id]
                 node_instance.input_connections[input_name] = (source_node, "output")
 
     # Recursive evaluation.
-    def evaluate_node(node: BaseNode):
+    def evaluate_node(node):
         inputs = {}
         for inp in node.inputs:
             name = inp["name"]
@@ -135,7 +123,7 @@ def api_execute():
                 source_node, _ = node.input_connections[name]
                 inputs[name] = evaluate_node(source_node)
             else:
-                inputs[name] = 0
+                inputs[name] = 0  # Default value if not connected.
         return node.execute(**inputs)
 
     results = {}
@@ -144,13 +132,12 @@ def api_execute():
             results[node.node_id] = evaluate_node(node)
     return jsonify({"results": results})
 
-
-# ---------------- Web UI Route ------------------
+# ---------------- Main Page Route ------------------
 @app.route("/")
 def index():
-    # Render your main template (ensure index.html exists in your templates folder)
+    # Render the index.html template (should be placed in the "templates" folder).
     return render_template("index.html")
 
-# ---------------- Main ------------------
+# ---------------- Main Entry Point ------------------
 if __name__ == "__main__":
     app.run(debug=True)

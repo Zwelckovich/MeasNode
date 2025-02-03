@@ -2,6 +2,7 @@ from app import BaseNode
 
 class Node(BaseNode):
     title = "BasicMath Node"
+    category = "Math"         # New category attribute
     inputs = [
         {"name": "a", "type": "int"},
         {"name": "b", "type": "int"}

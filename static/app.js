@@ -7,32 +7,117 @@ $(document).ready(function() {
   let currentWireLine = null; // SVG path element in progress
 
   // Global storage for node definitions fetched from the backend.
-  // Maps a node type (title) to its definition (including parameters_def, inputs, outputs).
+  // Maps a node type (title) to its definition (including parameters, inputs, outputs, category).
   let nodeDefinitions = {};
 
-  // Populate the library menu by fetching node definitions from the backend.
+  // --- Create the Library Popup Dynamically (if not already present) ---
+  if ($("#libraryPopup").length === 0) {
+    let $libraryPopup = $(`
+      <div id="libraryPopup" style="
+           position: fixed;
+           width: 200px;
+           height: 90%;
+           background-color: #555;
+           color: white;
+           overflow-y: auto;
+           padding: 10px;
+           box-sizing: border-box;
+           z-index: 1000;
+           display: none;">
+        <div id="closeLibraryPopup" style="text-align: right; cursor: pointer; margin-bottom: 10px;">X</div>
+        <div id="libraryItems"></div>
+      </div>
+    `);
+    $("body").append($libraryPopup);
+  }
+
+  // --- Fetch node definitions from the backend and group them by category ---
   $.getJSON("/api/nodes")
     .done(function(data) {
       if (Array.isArray(data) && data.length > 0) {
+        console.log("Received node definitions:", data);
+        // Group nodes by category.
+        let groups = {};
         data.forEach(function(def) {
+          let cat = def.category || "Uncategorized";
+          if (!groups[cat]) {
+            groups[cat] = [];
+          }
+          groups[cat].push(def);
+          // Also store the definition keyed by title.
           nodeDefinitions[def.title] = def;
-          $("#library").append(
-            `<li draggable="true" class="library-item" data-type="${def.title}">${def.title}</li>`
-          );
         });
-        // Attach dragstart event using delegation.
-        $("#library").on("dragstart", "li.library-item", function(ev) {
-          ev.originalEvent.dataTransfer.setData("text/plain", $(this).data("type"));
+        // Build the tree structure inside #libraryItems.
+        for (let category in groups) {
+          // Create a category header that toggles visibility of the group's items.
+          let $catHeader = $(`
+            <div class="library-cat-header" style="background:#666; padding:5px; cursor:pointer; margin-top:5px;">
+              ${category} <span style="float:right;">&#9660;</span>
+            </div>
+          `);
+          // Create a container for the nodes in this category.
+          let $catContainer = $('<div class="library-cat-items" style="padding-left:5px;"></div>');
+          groups[category].forEach(function(def) {
+            let $item = $(`
+              <div class="library-item" style="background: #777; margin: 3px 0; padding: 5px; cursor: move;">
+                ${def.title}
+              </div>
+            `);
+            $item.attr("data-type", def.title);
+            $catContainer.append($item);
+          });
+          $("#libraryItems").append($catHeader);
+          $("#libraryItems").append($catContainer);
+        }
+        // Make library items draggable.
+        $(".library-item").attr("draggable", "true");
+        $(".library-item").on("dragstart", function(ev) {
+          ev.originalEvent.dataTransfer.setData("text/plain", $(this).attr("data-type"));
+        });
+        // Toggle the visibility of category items on header click.
+        $(".library-cat-header").on("click", function() {
+          $(this).next(".library-cat-items").slideToggle();
+          let $arrow = $(this).find("span");
+          if ($arrow.html() === "▼" || $arrow.html() === "&#9660;") {
+            $arrow.html("&#9654;"); // right arrow
+          } else {
+            $arrow.html("&#9660;"); // down arrow
+          }
         });
       } else {
-        console.error("No node definitions returned from /api/nodes. Please ensure your Python backend returns a proper JSON array.");
+        console.error("No node definitions returned from /api/nodes. Check your backend.");
       }
     })
     .fail(function(jqXHR, textStatus, errorThrown) {
       console.error("Error loading node definitions:", textStatus, errorThrown);
     });
 
-  // Canvas drop events.
+  // --- Position the Library Popup Relative to the Sidebar ---
+  $(document).ready(function(){
+    $("#libraryButton").on("click", function(){
+       let sidebarOffset = $("#sidebar").offset();
+       let sidebarWidth = $("#sidebar").outerWidth(true);
+       // Position the popup so its left edge is exactly at the right edge of the sidebar.
+       $("#libraryPopup").css({
+          left: (sidebarOffset.left + sidebarWidth) + "px",
+          top: sidebarOffset.top + "px"
+       });
+       $("#libraryPopup").show();
+    });
+    $("#closeLibraryPopup").on("click", function(){
+       $("#libraryPopup").hide();
+    });
+  });
+
+  // --- Canvas Setup ---
+  if ($("#canvas").length === 0) {
+    $("body").append('<div id="canvas" style="position: relative; width: 80%; height: 80%; margin: 50px auto; border: 1px solid #ccc;"></div>');
+  }
+  if ($("#svgOverlay").length === 0) {
+    $("#canvas").append('<svg id="svgOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></svg>');
+  }
+
+  // --- Canvas Drag & Drop for Nodes ---
   $("#canvas").on("dragover", function(ev) {
     ev.preventDefault();
   });
@@ -45,17 +130,17 @@ $(document).ready(function() {
     addNode(type, x, y);
   });
 
-  // Helper: Compute an S-shaped (cubic Bézier) path given start and end coordinates.
+  // --- Helper: Compute S-shaped Bézier path ---
   function updateWirePath(x1, y1, x2, y2) {
     let dx = (x2 - x1) * 0.5;
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   }
 
-  // Function to create and add a node to the canvas.
+  // --- Function to Create and Add a Node to the Canvas ---
   function addNode(type, x, y) {
     let nodeId = "node_" + (++nodeCounter);
     let $node = $(`
-      <div class="node" data-id="${nodeId}" data-type="${type}">
+      <div class="node" data-id="${nodeId}" data-type="${type}" style="width:150px; height:120px; background:#444; color:white; padding:10px 10px 10px 30px; position:absolute;">
         <strong>${type}</strong>
         <div class="parameters"></div>
       </div>
@@ -66,16 +151,15 @@ $(document).ready(function() {
     let def = nodeDefinitions[type];
     if (def) {
       if (type === "Result Node") {
-        // For Result Node, create a readonly input field for each parameter.
         if (def.parameters && def.parameters.length > 0) {
           def.parameters.forEach(function(param) {
             if (param.type === "int") {
               $params.append(
-                `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly>`
+                `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly style="width:100%; margin-bottom:2px;">`
               );
             } else if (param.type === "text") {
               $params.append(
-                `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly>`
+                `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly style="width:100%; margin-bottom:2px;">`
               );
             } else if (param.type === "dropdown") {
               let optionsHtml = "";
@@ -85,22 +169,21 @@ $(document).ready(function() {
                 });
               }
               $params.append(
-                `<select class="param-${param.name}" disabled>${optionsHtml}</select>`
+                `<select class="param-${param.name}" disabled style="width:100%; margin-bottom:2px;">${optionsHtml}</select>`
               );
             }
           });
         }
       } else {
-        // For other nodes, create editable parameter fields.
         if (def.parameters && def.parameters.length > 0) {
           def.parameters.forEach(function(param) {
             if (param.type === "int") {
               $params.append(
-                `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}">`
+                `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" style="width:100%; margin-bottom:2px;">`
               );
             } else if (param.type === "text") {
               $params.append(
-                `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}">`
+                `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" style="width:100%; margin-bottom:2px;">`
               );
             } else if (param.type === "dropdown") {
               let optionsHtml = "";
@@ -110,7 +193,7 @@ $(document).ready(function() {
                 });
               }
               $params.append(
-                `<select class="param-${param.name}">${optionsHtml}</select>`
+                `<select class="param-${param.name}" style="width:100%; margin-bottom:2px;">${optionsHtml}</select>`
               );
             }
           });
@@ -119,33 +202,30 @@ $(document).ready(function() {
     } else {
       console.error("No definition found for node type:", type);
     }
-
-    // Dynamically create anchor points based on the node definition.
-    // Assume a default node height of 120px with a margin of 10px.
+    
+    // Dynamically create anchor points based on def.inputs and def.outputs.
     let defaultHeight = 120;
     let margin = 10;
     let availableHeight = defaultHeight - 2 * margin;
     if (def) {
-      // Create input anchors on the left.
       let inputs = def.inputs || [];
       inputs.forEach(function(inp, index) {
         let posY = margin + availableHeight * (index + 1) / (inputs.length + 1);
-        $node.append(`<div class="anchor input" data-anchor="${inp.name}" style="left:-8px; top:${posY}px;"></div>`);
+        $node.append(`<div class="anchor input" data-anchor="${inp.name}" style="position:absolute; left:-8px; top:${posY}px; width:12px; height:12px; background:#00aa00; border-radius:50%; border:2px solid #fff;"></div>`);
       });
-      // Create output anchors on the right.
       let outputs = def.outputs || [];
       outputs.forEach(function(outp, index) {
         let posY = margin + availableHeight * (index + 1) / (outputs.length + 1);
-        $node.append(`<div class="anchor output" data-anchor="${outp.name}" style="right:-8px; top:${posY}px;"></div>`);
+        $node.append(`<div class="anchor output" data-anchor="${outp.name}" style="position:absolute; right:-8px; top:${posY}px; width:12px; height:12px; background:#aa0000; border-radius:50%; border:2px solid #fff;"></div>`);
       });
     } else {
-      console.error("Falling back: No anchor information available for node type", type);
+      console.error("No anchor information available for node type", type);
     }
-
+    
     $("#canvas").append($node);
     nodes[nodeId] = $node;
     makeDraggable($node);
-
+    
     // Node selection.
     $node.on("mousedown", function(ev) {
       if (ev.target.tagName === "INPUT" || ev.target.tagName === "SELECT") return;
@@ -154,7 +234,7 @@ $(document).ready(function() {
         ev.stopPropagation();
       }
     });
-
+    
     // Node context menu.
     $node.on("contextmenu", function(ev) {
       ev.preventDefault();
@@ -162,13 +242,12 @@ $(document).ready(function() {
         showContextMenu(ev.pageX, ev.pageY, $(this));
       }
     });
-
+    
     // Wiring: left-click on an anchor starts wiring.
     $node.find(".anchor").on("mousedown", function(ev) {
       if (ev.which !== 1) return;
       ev.stopPropagation();
       let $anchor = $(this);
-      // Create a new SVG path element for the wire.
       currentWireLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
       currentWireLine.setAttribute("stroke", "#fff");
       currentWireLine.setAttribute("stroke-width", "2");
@@ -176,7 +255,6 @@ $(document).ready(function() {
       let svg = document.getElementById("svgOverlay");
       svg.appendChild(currentWireLine);
       let pos = getAnchorCenter($anchor);
-      // Store starting coordinates in currentWire.
       currentWire = {
         fromNode: $anchor.closest(".node"),
         fromAnchor: $anchor.attr("data-anchor"),
@@ -184,11 +262,10 @@ $(document).ready(function() {
         startX: pos.x,
         startY: pos.y
       };
-      // Set initial path.
       currentWireLine.setAttribute("d", updateWirePath(currentWire.startX, currentWire.startY, pos.x, pos.y));
     });
-
-    // Right-click on an anchor: select it and, if connected, show context menu to delete its wire.
+    
+    // Right-click on an anchor: select it and, if connected, show a context menu to delete its wire.
     $node.find(".anchor").on("contextmenu", function(ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -207,7 +284,7 @@ $(document).ready(function() {
     });
     return $node;
   }
-
+  
   // Returns the center (x, y) of an anchor element in canvas coordinates.
   function getAnchorCenter($anchor) {
     let offset = $anchor.offset();
@@ -219,7 +296,7 @@ $(document).ready(function() {
       y: offset.top - canvasOffset.top + height / 2
     };
   }
-
+  
   // Update the current wire path as the mouse moves.
   $("#canvas").on("mousemove", function(ev) {
     if (currentWireLine && currentWire) {
@@ -229,7 +306,7 @@ $(document).ready(function() {
       currentWireLine.setAttribute("d", updateWirePath(currentWire.startX, currentWire.startY, x, y));
     }
   });
-
+  
   // On mouse up on canvas, complete wiring if dropped on a valid target anchor.
   $("#canvas").on("mouseup", function(ev) {
     if (currentWireLine && currentWire) {
@@ -243,7 +320,6 @@ $(document).ready(function() {
           let toNodeId = toNode.data("id");
           let toAnchor = $(targetAnchor).attr("data-anchor");
           let pos = getAnchorCenter($(targetAnchor));
-          // When the connection is finalized, store the starting coordinates.
           wires.push({
             fromNode: fromNodeId,
             fromAnchor: fromAnchor,
@@ -253,7 +329,6 @@ $(document).ready(function() {
             lineStartX: currentWire.startX,
             lineStartY: currentWire.startY
           });
-          // Finalize the wire path.
           currentWireLine.setAttribute("d", updateWirePath(currentWire.startX, currentWire.startY, pos.x, pos.y));
         } else {
           currentWireLine.remove();
@@ -265,7 +340,7 @@ $(document).ready(function() {
     currentWire = null;
     currentWireLine = null;
   });
-
+  
   // Make nodes draggable.
   function makeDraggable($node) {
     $node.on("mousedown", function(ev) {
@@ -287,7 +362,7 @@ $(document).ready(function() {
       ev.preventDefault();
     });
   }
-
+  
   // Update positions of wires connected to a node.
   function updateWiresForNode($node) {
     let nodeId = $node.data("id");
@@ -295,12 +370,8 @@ $(document).ready(function() {
       if (w.fromNode === nodeId) {
         let $fromAnchor = $node.find(`.anchor.output[data-anchor="${w.fromAnchor}"]`);
         let pos = getAnchorCenter($fromAnchor);
-        // Update the starting point and stored coordinates.
         w.lineStartX = pos.x;
         w.lineStartY = pos.y;
-        // For updating, we need the current end point from the path.
-        // For simplicity, we recalc the path using the stored start and the current end of the wire.
-        // Find the to-node's current position:
         let $toNode = nodes[w.toNode];
         if ($toNode) {
           let $toAnchor = $toNode.find(`.anchor.input[data-anchor="${w.toAnchor}"]`);
@@ -311,27 +382,26 @@ $(document).ready(function() {
       if (w.toNode === nodeId) {
         let $toAnchor = $node.find(`.anchor.input[data-anchor="${w.toAnchor}"]`);
         let pos = getAnchorCenter($toAnchor);
-        // Use stored starting coordinates.
         let startX = w.lineStartX || 0;
         let startY = w.lineStartY || 0;
         w.line.setAttribute("d", updateWirePath(startX, startY, pos.x, pos.y));
       }
     });
   }
-
+  
   // Node selection.
   function selectNode($node) {
     $(".node").removeClass("selected");
     $node.addClass("selected");
     removeContextMenu();
   }
-
+  
   // Anchor selection: add a blue border (via a "selected" class).
   function selectAnchor($anchor) {
     $(".anchor").removeClass("selected");
     $anchor.addClass("selected");
   }
-
+  
   // Deselect nodes and anchors when clicking on the canvas background.
   $("#canvas").on("mousedown", function(ev) {
     if (ev.target.id === "canvas" || ev.target.id === "svgOverlay") {
@@ -340,14 +410,14 @@ $(document).ready(function() {
       removeContextMenu();
     }
   });
-
+  
   // Context menu for nodes.
   function showContextMenu(x, y, $node) {
     removeContextMenu();
     let $menu = $(`
-      <div class="context-menu">
-        <ul>
-          <li id="deleteNode">Delete Node</li>
+      <div class="context-menu" style="position:fixed; background:#ccc; padding:5px; border:1px solid #999; z-index:2000;">
+        <ul style="list-style:none; margin:0; padding:0;">
+          <li id="deleteNode" style="cursor:pointer;">Delete Node</li>
         </ul>
       </div>
     `);
@@ -366,14 +436,14 @@ $(document).ready(function() {
       removeContextMenu();
     });
   }
-
-  // Context menu for anchors for deleting a connected wire.
+  
+  // Context menu for anchors to delete a connected wire.
   function showAnchorContextMenu(x, y, $anchor, connection) {
     removeContextMenu();
     let $menu = $(`
-      <div class="context-menu">
-        <ul>
-          <li id="deleteWire">Delete Wire</li>
+      <div class="context-menu" style="position:fixed; background:#ccc; padding:5px; border:1px solid #999; z-index:2000;">
+        <ul style="list-style:none; margin:0; padding:0;">
+          <li id="deleteWire" style="cursor:pointer;">Delete Wire</li>
         </ul>
       </div>
     `);
@@ -390,7 +460,7 @@ $(document).ready(function() {
       removeContextMenu();
     });
   }
-
+  
   function removeContextMenu() {
     $(".context-menu").remove();
   }
@@ -399,7 +469,7 @@ $(document).ready(function() {
       removeContextMenu();
     }
   });
-
+  
   // Start button: Assemble the workflow JSON and send it to the backend.
   $("#startBtn").on("click", function() {
     let workflow = { nodes: [] };
@@ -441,7 +511,6 @@ $(document).ready(function() {
       success: function(response) {
         console.log("Execution response:", response);
         for (let nodeId in response.results) {
-          // For Result Node, update the readonly input field.
           let $resultElem = $(`.node[data-id="${nodeId}"] .param-result`);
           console.log("Updating node", nodeId, "found result element count:", $resultElem.length);
           $resultElem.val(response.results[nodeId]);
@@ -452,4 +521,9 @@ $(document).ready(function() {
       }
     });
   });
+  
+  // If Start button does not exist, create one.
+  if ($("#startBtn").length === 0) {
+    $("body").append('<button id="startBtn" style="position:fixed; bottom:10px; right:10px; padding:10px; width:100px; height:30px;">Start</button>');
+  }
 });
