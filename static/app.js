@@ -31,7 +31,7 @@ $(document).ready(function() {
     $("body").append($libraryPopup);
   }
 
-  // --- Fetch node definitions from the backend and group them by category ---
+  // --- Fetch node definitions from backend and group by category ---
   $.getJSON("/api/nodes")
     .done(function(data) {
       if (Array.isArray(data) && data.length > 0) {
@@ -44,18 +44,16 @@ $(document).ready(function() {
             groups[cat] = [];
           }
           groups[cat].push(def);
-          // Also store the definition keyed by title.
+          // Store definition keyed by title.
           nodeDefinitions[def.title] = def;
         });
-        // Build the tree structure inside #libraryItems.
+        // Build the category tree in the library popup.
         for (let category in groups) {
-          // Create a category header that toggles visibility of the group's items.
           let $catHeader = $(`
             <div class="library-cat-header" style="background:#666; padding:5px; cursor:pointer; margin-top:5px;">
               ${category} <span style="float:right;">&#9660;</span>
             </div>
           `);
-          // Create a container for the nodes in this category.
           let $catContainer = $('<div class="library-cat-items" style="padding-left:5px;"></div>');
           groups[category].forEach(function(def) {
             let $item = $(`
@@ -69,19 +67,17 @@ $(document).ready(function() {
           $("#libraryItems").append($catHeader);
           $("#libraryItems").append($catContainer);
         }
-        // Make library items draggable.
         $(".library-item").attr("draggable", "true");
         $(".library-item").on("dragstart", function(ev) {
           ev.originalEvent.dataTransfer.setData("text/plain", $(this).attr("data-type"));
         });
-        // Toggle the visibility of category items on header click.
         $(".library-cat-header").on("click", function() {
           $(this).next(".library-cat-items").slideToggle();
           let $arrow = $(this).find("span");
           if ($arrow.html() === "▼" || $arrow.html() === "&#9660;") {
-            $arrow.html("&#9654;"); // right arrow
+            $arrow.html("&#9654;");
           } else {
-            $arrow.html("&#9660;"); // down arrow
+            $arrow.html("&#9660;");
           }
         });
       } else {
@@ -211,12 +207,12 @@ $(document).ready(function() {
       let inputs = def.inputs || [];
       inputs.forEach(function(inp, index) {
         let posY = margin + availableHeight * (index + 1) / (inputs.length + 1);
-        $node.append(`<div class="anchor input" data-anchor="${inp.name}" style="position:absolute; left:-8px; top:${posY}px; width:12px; height:12px; background:#00aa00; border-radius:50%; border:2px solid #fff;"></div>`);
+        $node.append(`<div class="anchor input" data-anchor="${inp.name}" style="position:absolute; left:-8px; top:${posY}px; background:#00aa00; border-radius:50%; border:2px solid #fff; cursor:pointer;"></div>`);
       });
       let outputs = def.outputs || [];
       outputs.forEach(function(outp, index) {
         let posY = margin + availableHeight * (index + 1) / (outputs.length + 1);
-        $node.append(`<div class="anchor output" data-anchor="${outp.name}" style="position:absolute; right:-8px; top:${posY}px; width:12px; height:12px; background:#aa0000; border-radius:50%; border:2px solid #fff;"></div>`);
+        $node.append(`<div class="anchor output" data-anchor="${outp.name}" style="position:absolute; right:-8px; top:${posY}px; background:#aa0000; border-radius:50%; border:2px solid #fff; cursor:pointer;"></div>`);
       });
     } else {
       console.error("No anchor information available for node type", type);
@@ -243,11 +239,14 @@ $(document).ready(function() {
       }
     });
     
-    // Wiring: left-click on an anchor starts wiring.
+    // Wiring: left-click on an anchor starts wiring and also selects the anchor.
     $node.find(".anchor").on("mousedown", function(ev) {
       if (ev.which !== 1) return;
       ev.stopPropagation();
       let $anchor = $(this);
+      // Use left-click to select the anchor.
+      selectAnchor($anchor);
+      // Start wiring.
       currentWireLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
       currentWireLine.setAttribute("stroke", "#fff");
       currentWireLine.setAttribute("stroke-width", "2");
@@ -265,12 +264,12 @@ $(document).ready(function() {
       currentWireLine.setAttribute("d", updateWirePath(currentWire.startX, currentWire.startY, pos.x, pos.y));
     });
     
-    // Right-click on an anchor: select it and, if connected, show a context menu to delete its wire.
+    // Right-click on an anchor: show the context menu for deleting its wire.
     $node.find(".anchor").on("contextmenu", function(ev) {
       ev.preventDefault();
       ev.stopPropagation();
       let $anchor = $(this);
-      selectAnchor($anchor);
+      // Do not select the anchor on right-click.
       let anchorName = $anchor.attr("data-anchor");
       let $parentNode = $anchor.closest(".node");
       let nodeId = $parentNode.data("id");
@@ -396,7 +395,7 @@ $(document).ready(function() {
     removeContextMenu();
   }
   
-  // Anchor selection: add a blue border (via a "selected" class).
+  // Anchor selection: add a blue border by adding the "selected" class.
   function selectAnchor($anchor) {
     $(".anchor").removeClass("selected");
     $anchor.addClass("selected");
