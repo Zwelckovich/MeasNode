@@ -7,8 +7,13 @@ $(document).ready(function() {
   let currentWireLine = null; // SVG path element in progress
 
   // Global storage for node definitions fetched from the backend.
-  // Maps a node type (title) to its definition (including parameters, inputs, outputs, category).
   let nodeDefinitions = {};
+
+  // --- Helper Function: Compute S-shaped Bézier Path ---
+  function updateWirePath(x1, y1, x2, y2) {
+    let dx = (x2 - x1) * 0.5;
+    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  }
 
   // --- Create the Library Popup Dynamically (if not already present) ---
   if ($("#libraryPopup").length === 0) {
@@ -36,7 +41,6 @@ $(document).ready(function() {
     .done(function(data) {
       if (Array.isArray(data) && data.length > 0) {
         console.log("Received node definitions:", data);
-        // Group nodes by category.
         let groups = {};
         data.forEach(function(def) {
           let cat = def.category || "Uncategorized";
@@ -44,10 +48,8 @@ $(document).ready(function() {
             groups[cat] = [];
           }
           groups[cat].push(def);
-          // Store definition keyed by title.
           nodeDefinitions[def.title] = def;
         });
-        // Build the category tree in the library popup.
         for (let category in groups) {
           let $catHeader = $(`
             <div class="library-cat-header" style="background:#666; padding:5px; cursor:pointer; margin-top:5px;">
@@ -93,7 +95,7 @@ $(document).ready(function() {
     $("#libraryButton").on("click", function(){
        let sidebarOffset = $("#sidebar").offset();
        let sidebarWidth = $("#sidebar").outerWidth(true);
-       // Position the popup so its left edge is exactly at the right edge of the sidebar.
+       console.log("Sidebar offset:", sidebarOffset, "Sidebar width:", sidebarWidth);
        $("#libraryPopup").css({
           left: (sidebarOffset.left + sidebarWidth) + "px",
           top: sidebarOffset.top + "px"
@@ -126,96 +128,127 @@ $(document).ready(function() {
     addNode(type, x, y);
   });
 
-  // --- Helper: Compute S-shaped Bézier path ---
-  function updateWirePath(x1, y1, x2, y2) {
-    let dx = (x2 - x1) * 0.5;
-    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  // --- Layout Constants ---
+  const titleHeight = 30;          // Height for node title area.
+  const anchorAreaTop = 35;          // Y-coordinate where anchors begin.
+  const anchorSpacing = 20;          // Vertical spacing between anchors.
+  // Compute field area height dynamically: assume 25px per field plus 10px padding.
+  function computeFieldAreaHeight(numFields) {
+    return numFields * 25 + 10;
   }
 
   // --- Function to Create and Add a Node to the Canvas ---
   function addNode(type, x, y) {
+    let def = nodeDefinitions[type];
+    if (!def) {
+      console.error("No definition found for node type:", type);
+      return;
+    }
+    let numInputs = def.inputs ? def.inputs.length : 0;
+    let numOutputs = def.outputs ? def.outputs.length : 0;
+    let maxAnchors = Math.max(numInputs, numOutputs);
+    let numFields = def.parameters && def.parameters.length ? def.parameters.length : 0;
+    let fieldAreaHeight = computeFieldAreaHeight(numFields);
+    // Total node height = title area + (anchor area) + field area.
+    let nodeHeight = titleHeight + (maxAnchors * anchorSpacing) + fieldAreaHeight;
+    // The parameters area will begin immediately after the anchor area.
+    let fieldAreaTop = titleHeight + (maxAnchors * anchorSpacing);
+    
     let nodeId = "node_" + (++nodeCounter);
     let $node = $(`
-      <div class="node" data-id="${nodeId}" data-type="${type}" style="width:150px; height:120px; background:#444; color:white; padding:10px 10px 10px 30px; position:absolute;">
-        <strong>${type}</strong>
+      <div class="node" data-id="${nodeId}" data-type="${type}" 
+           style="width:150px; height:${nodeHeight}px; background:#444; color:white; padding: ${fieldAreaTop}px 10px 10px 30px; position:absolute;">
+        <div class="node-title" style="position:absolute; top:0; left:0; width:100%; height:${titleHeight}px; text-align:center; line-height:${titleHeight}px; border-bottom:1px solid #666;">
+          ${type}
+        </div>
         <div class="parameters"></div>
       </div>
     `);
     $node.css({ left: x, top: y });
     let $params = $node.find(".parameters");
     $params.empty();
-    let def = nodeDefinitions[type];
-    if (def) {
+
+    // Populate parameter fields.
+    if (def.parameters && def.parameters.length > 0) {
       if (type === "Result Node") {
-        if (def.parameters && def.parameters.length > 0) {
-          def.parameters.forEach(function(param) {
-            if (param.type === "int") {
-              $params.append(
-                `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly style="width:100%; margin-bottom:2px;">`
-              );
-            } else if (param.type === "text") {
-              $params.append(
-                `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly style="width:100%; margin-bottom:2px;">`
-              );
-            } else if (param.type === "dropdown") {
-              let optionsHtml = "";
-              if (param.options && Array.isArray(param.options)) {
-                param.options.forEach(function(opt) {
-                  optionsHtml += `<option value="${opt}" ${opt === param.default ? "selected" : ""}>${opt}</option>`;
-                });
-              }
-              $params.append(
-                `<select class="param-${param.name}" disabled style="width:100%; margin-bottom:2px;">${optionsHtml}</select>`
-              );
+        def.parameters.forEach(function(param) {
+          if (param.type === "int") {
+            $params.append(
+              `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly style="width:100%; margin-bottom:2px;">`
+            );
+          } else if (param.type === "text") {
+            $params.append(
+              `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" readonly style="width:100%; margin-bottom:2px;">`
+            );
+          } else if (param.type === "dropdown") {
+            let optionsHtml = "";
+            if (param.options && Array.isArray(param.options)) {
+              param.options.forEach(function(opt) {
+                optionsHtml += `<option value="${opt}" ${opt === param.default ? "selected" : ""}>${opt}</option>`;
+              });
             }
-          });
-        }
+            $params.append(
+              `<select class="param-${param.name}" disabled style="width:100%; margin-bottom:2px;">${optionsHtml}</select>`
+            );
+          }
+        });
       } else {
-        if (def.parameters && def.parameters.length > 0) {
-          def.parameters.forEach(function(param) {
-            if (param.type === "int") {
-              $params.append(
-                `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" style="width:100%; margin-bottom:2px;">`
-              );
-            } else if (param.type === "text") {
-              $params.append(
-                `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" style="width:100%; margin-bottom:2px;">`
-              );
-            } else if (param.type === "dropdown") {
-              let optionsHtml = "";
-              if (param.options && Array.isArray(param.options)) {
-                param.options.forEach(function(opt) {
-                  optionsHtml += `<option value="${opt}" ${opt === param.default ? "selected" : ""}>${opt}</option>`;
-                });
-              }
-              $params.append(
-                `<select class="param-${param.name}" style="width:100%; margin-bottom:2px;">${optionsHtml}</select>`
-              );
+        def.parameters.forEach(function(param) {
+          if (param.type === "int") {
+            $params.append(
+              `<input type="number" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" style="width:100%; margin-bottom:2px;">`
+            );
+          } else if (param.type === "text") {
+            $params.append(
+              `<input type="text" class="param-${param.name}" value="${param.default}" placeholder="${param.name}" style="width:100%; margin-bottom:2px;">`
+            );
+          } else if (param.type === "dropdown") {
+            let optionsHtml = "";
+            if (param.options && Array.isArray(param.options)) {
+              param.options.forEach(function(opt) {
+                optionsHtml += `<option value="${opt}" ${opt === param.default ? "selected" : ""}>${opt}</option>`;
+              });
             }
-          });
-        }
+            $params.append(
+              `<select class="param-${param.name}" style="width:100%; margin-bottom:2px;">${optionsHtml}</select>`
+            );
+          }
+        });
       }
-    } else {
-      console.error("No definition found for node type:", type);
     }
     
-    // Dynamically create anchor points based on def.inputs and def.outputs.
-    let defaultHeight = 120;
-    let margin = 10;
-    let availableHeight = defaultHeight - 2 * margin;
-    if (def) {
-      let inputs = def.inputs || [];
-      inputs.forEach(function(inp, index) {
-        let posY = margin + availableHeight * (index + 1) / (inputs.length + 1);
-        $node.append(`<div class="anchor input" data-anchor="${inp.name}" style="position:absolute; left:-8px; top:${posY}px; background:#00aa00; border-radius:50%; border:2px solid #fff; cursor:pointer;"></div>`);
+    // --- Create Anchor Points and Labels ---
+    // For input anchors: position on the left; label to the right.
+    if (def.inputs && def.inputs.length > 0) {
+      def.inputs.forEach(function(inp, index) {
+        let posY = anchorAreaTop + index * anchorSpacing;
+        let $anchor = $(`
+          <div class="anchor input" data-anchor="${inp.name}" style="position:absolute; left:-8px; top:${posY}px; cursor:pointer;"></div>
+        `);
+        let $label = $(`
+          <span class="anchor-label" style="position:absolute; left:12px; top:${posY + 1}px; font-size:10px; color:#fff; pointer-events:none;">
+            ${inp.name}
+          </span>
+        `);
+        $node.append($anchor);
+        $node.append($label);
       });
-      let outputs = def.outputs || [];
-      outputs.forEach(function(outp, index) {
-        let posY = margin + availableHeight * (index + 1) / (outputs.length + 1);
-        $node.append(`<div class="anchor output" data-anchor="${outp.name}" style="position:absolute; right:-8px; top:${posY}px; background:#aa0000; border-radius:50%; border:2px solid #fff; cursor:pointer;"></div>`);
+    }
+    // For output anchors: position on the right; label to the left.
+    if (def.outputs && def.outputs.length > 0) {
+      def.outputs.forEach(function(outp, index) {
+        let posY = anchorAreaTop + index * anchorSpacing;
+        let $anchor = $(`
+          <div class="anchor output" data-anchor="${outp.name}" style="position:absolute; right:-8px; top:${posY}px; cursor:pointer;"></div>
+        `);
+        let $label = $(`
+          <span class="anchor-label" style="position:absolute; right:12px; top:${posY + 1}px; font-size:10px; color:#fff; pointer-events:none;">
+            ${outp.name}
+          </span>
+        `);
+        $node.append($anchor);
+        $node.append($label);
       });
-    } else {
-      console.error("No anchor information available for node type", type);
     }
     
     $("#canvas").append($node);
@@ -239,14 +272,13 @@ $(document).ready(function() {
       }
     });
     
-    // Wiring: left-click on an anchor starts wiring and also selects the anchor.
+    // Wiring: left-click on an anchor starts wiring and selects the anchor.
     $node.find(".anchor").on("mousedown", function(ev) {
       if (ev.which !== 1) return;
       ev.stopPropagation();
       let $anchor = $(this);
-      // Use left-click to select the anchor.
       selectAnchor($anchor);
-      // Start wiring.
+      console.log("Anchor selected:", $anchor.attr("data-anchor"));
       currentWireLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
       currentWireLine.setAttribute("stroke", "#fff");
       currentWireLine.setAttribute("stroke-width", "2");
@@ -264,12 +296,11 @@ $(document).ready(function() {
       currentWireLine.setAttribute("d", updateWirePath(currentWire.startX, currentWire.startY, pos.x, pos.y));
     });
     
-    // Right-click on an anchor: show the context menu for deleting its wire.
+    // Right-click on an anchor: show context menu for deleting its wire.
     $node.find(".anchor").on("contextmenu", function(ev) {
       ev.preventDefault();
       ev.stopPropagation();
       let $anchor = $(this);
-      // Do not select the anchor on right-click.
       let anchorName = $anchor.attr("data-anchor");
       let $parentNode = $anchor.closest(".node");
       let nodeId = $parentNode.data("id");
