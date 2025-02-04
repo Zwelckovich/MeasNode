@@ -17,7 +17,7 @@ function computeFieldAreaHeight(numFields) {
   return numFields * 25 + 10;
 }
 
-// Main function to create and add a node to the canvas.
+// Main function to create and add a node to the workflow.
 function addNode(type, x, y) {
   let def = nodeDefinitions[type];
   if (!def) {
@@ -44,11 +44,11 @@ function addNode(type, x, y) {
       <div class="parameters"></div>
     </div>
   `);
+  // Position relative to #workflow.
   $node.css({ left: x, top: y });
   let $params = $node.find(".parameters");
   $params.empty();
 
-  // Populate parameter fields.
   if (def.parameters && def.parameters.length > 0) {
     if (type === "Result Node") {
       def.parameters.forEach(function(param) {
@@ -129,7 +129,8 @@ function addNode(type, x, y) {
     });
   }
   
-  $("#canvas").append($node);
+  // Append the node to the workflow container.
+  $("#workflow").append($node);
   window.nodes[nodeId] = $node;
   
   // Attach mousedown handler to anchors to start wiring.
@@ -139,32 +140,33 @@ function addNode(type, x, y) {
     let $anchor = $(this);
     selectAnchor($anchor);
     console.log("Anchor selected:", $anchor.attr("data-anchor"));
+    // Create the SVG path for wiring.
     window.currentWireLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
     window.currentWireLine.setAttribute("stroke", "#fff");
     window.currentWireLine.setAttribute("stroke-width", "2");
     window.currentWireLine.setAttribute("fill", "none");
     let svg = document.getElementById("svgOverlay");
     svg.appendChild(window.currentWireLine);
+    // Get the anchor's center (using getAnchorCenter from utils.js).
     let pos = getAnchorCenter($anchor);
+    // Store the starting anchor element reference.
     window.currentWire = {
       fromNode: $anchor.closest(".node"),
       fromAnchor: $anchor.attr("data-anchor"),
       fromType: $anchor.hasClass("output") ? "output" : "input",
+      fromAnchorElement: $anchor, // store reference
       startX: pos.x,
       startY: pos.y
     };
-    window.currentWireLine.setAttribute("d", updateWirePath(window.currentWire.startX, window.currentWire.startY, pos.x, pos.y));
+    // Start with a zero-length path.
+    window.currentWireLine.setAttribute("d", updateWirePath(pos.x, pos.y, pos.x, pos.y));
   });
   
   // Attach contextmenu handler on node for right-click to delete node.
   $node.on("contextmenu", function(ev) {
     ev.preventDefault();
-    // Only show if this node is selected.
-    if ($(this).hasClass("selected")) {
-      // Call showContextMenu from contextMenu.js.
-      if (window.showContextMenu) {
-        window.showContextMenu(ev.pageX, ev.pageY, $(this));
-      }
+    if ($(this).hasClass("selected") && window.showContextMenu) {
+      window.showContextMenu(ev.pageX, ev.pageY, $(this));
     }
   });
   
@@ -176,7 +178,6 @@ function addNode(type, x, y) {
     let anchorName = $anchor.attr("data-anchor");
     let $parentNode = $anchor.closest(".node");
     let nodeId = $parentNode.data("id");
-    // Find a connection (wire) that uses this anchor.
     let connection = window.wires.find(function(w) {
       return (w.fromNode === nodeId && w.fromAnchor === anchorName) ||
              (w.toNode === nodeId && w.toAnchor === anchorName);
@@ -243,15 +244,17 @@ function updateWiresForNode($node) {
   });
 }
 
-// Helper function to get the center of an anchor element in canvas coordinates.
+// Helper function to get the center of an anchor element in workflow coordinates.
 function getAnchorCenter($anchor) {
-  let offset = $anchor.offset();
-  let width = $anchor.outerWidth();
-  let height = $anchor.outerHeight();
-  let canvasOffset = $("#canvas").offset();
+  const wfElem = document.getElementById("workflow");
+  const wfRect = wfElem.getBoundingClientRect();
+  const anchorRect = $anchor[0].getBoundingClientRect();
+  const centerX = (anchorRect.left + anchorRect.right) / 2;
+  const centerY = (anchorRect.top + anchorRect.bottom) / 2;
+  const currentZoom = window.zoom || 1;
   return {
-    x: offset.left - canvasOffset.left + width / 2,
-    y: offset.top - canvasOffset.top + height / 2
+    x: (centerX - wfRect.left) / currentZoom,
+    y: (centerY - wfRect.top) / currentZoom
   };
 }
 
