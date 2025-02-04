@@ -49,11 +49,19 @@
       cursor: pointer;
       margin-top: 10px;
     }
-    /* Canvas area */
+    /* Canvas area with a square grid background */
     #canvas {
       flex: 1;
       position: relative;
-      background: #222;
+      background-color: #222;
+      /* Rough grid: 50px square with lines slightly darker than background (#1e1e1e) */
+      /* Fine grid: 10px square with lines slightly brighter than background (#282828) */
+      background-image: 
+        linear-gradient(to right, #1e1e1e 1px, transparent 1px),
+        linear-gradient(to bottom, #1e1e1e 1px, transparent 1px),
+        linear-gradient(to right, #282828 1px, transparent 1px),
+        linear-gradient(to bottom, #282828 1px, transparent 1px);
+      background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
       overflow: auto;
     }
     /* SVG overlay for wiring */
@@ -143,7 +151,27 @@
     .context-menu ul li:hover {
       background: #eee;
     }
-    /* (No static markup for the library popup – it will be created dynamically) */
+    /* Library Popup styling (created dynamically by library.js) */
+    #libraryPopup {
+      position: fixed;
+      width: 200px;
+      height: 90%;
+      background-color: #555;
+      color: white;
+      overflow-y: auto;
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 1000;
+      display: none;
+    }
+    #closeLibraryPopup {
+      text-align: right;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    #libraryItems {
+      /* Populated dynamically by library.js */
+    }
   </style>
 </head>
 <body>
@@ -158,7 +186,9 @@
     <svg id="svgOverlay"></svg>
   </div>
   
-  <!-- Debug script to log Library button clicks -->
+  <!-- The library popup will be created dynamically by library.js -->
+  
+  <!-- Debugging: Log a message when the Library button is clicked -->
   <script>
     document.addEventListener("DOMContentLoaded", function() {
       console.log("DOM fully loaded and parsed.");
@@ -174,7 +204,7 @@
   
   <!--
     Note:
-    - The "Access to storage" error is likely from a browser extension and can be ignored if functionality is not affected.
+    - The "Access to storage" error is likely from a browser extension. Test in incognito mode if necessary.
     - The favicon 404 error can be fixed by adding a favicon.ico in your static folder.
   -->
 </body>
