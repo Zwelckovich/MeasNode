@@ -51,31 +51,36 @@
       margin-top: 10px;
     }
     /* Canvas area with grid background */
+    /* The grid background is removed from here so that #workflow provides the grid */
     #canvas {
       flex: 1;
       position: relative;
       overflow: hidden;
       background-color: #222;
-      /* Grid Background always fills the canvas */
+      z-index: 0;
+    }
+    /* Workflow container (holds nodes and wires) */
+    /* Fixed size of 10000×10000px starting at (0,0) */
+    /* The grid background is applied here. */
+    #workflow {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 10000px;
+      height: 10000px;
+      transform-origin: 0 0;
+      overflow: visible;
+      z-index: 10;
+      background-color: #222;
       background-image: 
         linear-gradient(to right, #1e1e1e 1px, transparent 1px),
         linear-gradient(to bottom, #1e1e1e 1px, transparent 1px),
         linear-gradient(to right, #282828 1px, transparent 1px),
         linear-gradient(to bottom, #282828 1px, transparent 1px);
       background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
-      z-index: 0;
-    }
-    /* Workflow container inside canvas (holds nodes and wires) */
-    #workflow {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      transform-origin: 0 0;
-      z-index: 10; /* Above the canvas grid background */
     }
     /* SVG overlay for wiring */
+    /* Placed inside #workflow so that wires are transformed along with nodes */
     #svgOverlay {
       position: absolute;
       top: 0;
@@ -83,7 +88,7 @@
       pointer-events: none;
       width: 100%;
       height: 100%;
-      z-index: 11;
+      z-index: 200; /* Wires appear above the workflow background but below nodes */
     }
     /* Node styling */
     .node {
@@ -98,7 +103,7 @@
       box-sizing: border-box;
       cursor: move;
       user-select: none;
-      z-index: 20; /* Above workflow container's grid */
+      z-index: 300 !important; /* Nodes appear above wiring and background */
     }
     .node.selected {
       border-color: blue;
@@ -196,9 +201,9 @@
   
   <!-- Canvas for node editor -->
   <div id="canvas">
-    <!-- The grid background is on #canvas -->
     <!-- Workflow container holds nodes and wires and is panned/zoomed -->
     <div id="workflow">
+      <!-- Nodes are appended here -->
       <svg id="svgOverlay"></svg>
     </div>
   </div>
