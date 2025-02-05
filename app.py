@@ -1,5 +1,6 @@
 import os
 import importlib.util
+import mimetypes
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
@@ -136,6 +137,8 @@ def api_execute():
 @app.route("/")
 def index():
     # Render the index.html template (should be placed in the "templates" folder).
+    mimetypes.add_type('application/javascript', '.js')
+    mimetypes.add_type('text/css', '.css')
     return render_template("index.html")
 
 # ---------------- Main Entry Point ------------------
