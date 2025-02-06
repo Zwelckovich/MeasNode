@@ -3,12 +3,33 @@ import importlib.util
 import mimetypes
 import uuid
 import json
+import time
+import logging
+import queue
 from flask import Flask, Response, jsonify, render_template, request
 
 app = Flask(__name__)
 
 # Global dictionary to store workflow processing generators keyed by token.
 pending_workflows = {}
+
+# --- Set up a global log queue and custom logging handler ---
+log_queue = queue.Queue()
+
+class QueueHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            log_queue.put(msg)
+        except Exception:
+            self.handleError(record)
+
+# Set up the logging system
+queue_handler = QueueHandler()
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+queue_handler.setFormatter(formatter)
+logging.getLogger().addHandler(queue_handler)
+logging.getLogger().setLevel(logging.INFO)
 
 # ---------------- Base Node Class ------------------
 class BaseNode:
@@ -63,6 +84,15 @@ def load_node_modules():
 # ---------------- API Endpoint: /api/nodes ------------------
 @app.route("/api/nodes", methods=["GET"])
 def api_nodes():
+    """
+    Returns a JSON array of available node definitions.
+    Each node definition includes:
+      - title: the node title (unique)
+      - category: the node category (for grouping in the library)
+      - parameters: the parameter definitions (from parameters_def)
+      - inputs: the input definitions
+      - outputs: the output definitions
+    """
     node_classes = load_node_modules()
     definitions = []
     for title, cls in node_classes.items():
@@ -79,7 +109,15 @@ def api_nodes():
 @app.route("/api/execute", methods=["POST"])
 def api_execute():
     """
-    Accepts a JSON payload describing the workflow, starts processing, and returns a unique token.
+    Expects a JSON payload describing the workflow.
+    The workflow JSON should have a "nodes" array, where each node is defined with:
+      - id: unique node identifier
+      - type: the node title (to look up the corresponding Python class)
+      - parameters: parameter values (as entered by the user)
+      - connections: a mapping of input names to the source node IDs.
+    
+    This endpoint instantiates the nodes, sets up connections, recursively evaluates the nodes,
+    and returns a unique token.
     The processing will be streamed via SSE at the /api/execute_stream endpoint.
     """
     workflow = request.json
@@ -111,18 +149,15 @@ def api_execute():
         results = {}
 
         def evaluate_node(node):
-            # First, evaluate all inputs (post-order):
             inputs = {}
             for inp in node.inputs:
                 name = inp["name"]
                 if name in node.input_connections:
                     source_node, _ = node.input_connections[name]
-                    # Recursively evaluate the input and capture its result.
                     value = yield from evaluate_node(source_node)
                     inputs[name] = value
                 else:
                     inputs[name] = 0
-            # After inputs are evaluated, yield PROCESSING event.
             yield f"data: PROCESSING {node.node_id}\n\n"
             result = node.execute(**inputs)
             results[node.node_id] = result
@@ -130,7 +165,6 @@ def api_execute():
             yield f"data: DONE {node.node_id}\n\n"
             return result
 
-        # Evaluate nodes of type "Result Node".
         for node in nodes.values():
             if node.title == "Result Node":
                 gen = evaluate_node(node)
@@ -140,7 +174,6 @@ def api_execute():
                 except StopIteration as e:
                     results[node.node_id] = e.value
 
-        # Finally, yield an END event with processing order and results.
         yield f"data: END {json.dumps({'order': processing_order, 'results': results})}\n\n"
 
     pending_workflows[token] = generate_progress()
@@ -157,9 +190,39 @@ def api_execute_stream():
         try:
             for event in gen:
                 yield event
+        except Exception as e:
+            # Log the exception and yield an END event with an error message.
+            logging.error(f"Error in execution stream: {e}")
+            yield f"data: END {json.dumps({'order': [], 'results': {}, 'error': str(e)})}\n\n"
         finally:
             del pending_workflows[token]
     return Response(stream(), mimetype="text/event-stream")
+
+
+# ---------------- API Endpoint: /api/logs ------------------
+@app.route("/api/logs")
+def stream_logs():
+    """
+    Streams actual log messages from the global log queue via Server-Sent Events.
+    When no log message is available or the message is empty, a comment line is sent
+    so that no visible log line is added to the log window.
+    """
+    def generate_logs():
+        while True:
+            try:
+                # Wait for up to 1 second for a log message.
+                msg = log_queue.get(timeout=1)
+                # Only yield a log message if it is not empty.
+                if msg.strip():
+                    yield f"data: {msg}\n\n"
+                else:
+                    # Yield a comment line which the client can ignore.
+                    yield ": keepalive\n\n"
+            except queue.Empty:
+                # When timeout occurs, send a keepalive comment.
+                yield ": keepalive\n\n"
+    return Response(generate_logs(), mimetype='text/event-stream')
+
 
 # ---------------- Main Page Route ------------------
 @app.route("/")

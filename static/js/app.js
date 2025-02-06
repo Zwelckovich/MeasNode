@@ -1,4 +1,4 @@
-// app.js (version 0.2.2-deletion-undo-only-final2)
+// app.js (version 0.2.3)
 // Ensure jQuery is loaded globally (from index.html) before this module runs.
 
 // Import modules (adjust paths if necessary)
@@ -41,7 +41,7 @@ function updateWorkflowTransform() {
 
 //////////////////////////////////////////////////////
 // --- Deletion Undo/Redo State Management ---
-// We maintain two stacks for deletion events only.
+// (This version implements deletion-only undo/redo.)
 let deletionUndoStack = [];
 let deletionRedoStack = [];
 
@@ -76,7 +76,6 @@ function getWorkflowState() {
       })()
     });
   });
-  // Capture wires from window.wires.
   state.wires = window.wires.map(w => ({
     fromNode: w.fromNode,
     fromAnchor: w.fromAnchor,
@@ -88,17 +87,13 @@ function getWorkflowState() {
 
 // Restore the workflow state.
 function restoreWorkflowState(state) {
-  // Clear the workflow container.
   $("#workflow").empty();
-  // Re-add the SVG overlay element.
   $("#workflow").append('<svg id="svgOverlay"></svg>');
   
   window.wires = [];
   window.nodes = {};
-  // Recreate nodes from the snapshot.
   state.nodes.forEach(n => {
     let $node = addNode(n.type, n.left, n.top);
-    // Restore parameter values.
     $node.find(".parameters input, .parameters select").each(function() {
       let cls = $(this).attr("class") || "";
       let match = cls.match(/param-([\w-]+)/);
@@ -106,11 +101,9 @@ function restoreWorkflowState(state) {
         $(this).val(n.parameters[match[1]]);
       }
     });
-    // Overwrite the auto-generated id with the saved id.
     $node.attr("data-id", n.id);
     window.nodes[n.id] = $node;
   });
-  // Recreate wires.
   state.wires.forEach(wireData => {
     createWireFromData(wireData);
   });
@@ -172,7 +165,6 @@ function createWireFromData(wireData) {
 // Global Key Handlers for Deletion Undo/Redo (Deletion events only)
 $(document).on("keydown", function(ev) {
   if (ev.ctrlKey && (ev.key === "z" || ev.key === "Z")) {
-    // Undo deletion.
     if (deletionUndoStack.length > 0) {
       let currentState = getWorkflowState();
       deletionRedoStack.push(currentState);
@@ -182,7 +174,6 @@ $(document).on("keydown", function(ev) {
     }
     ev.preventDefault();
   } else if (ev.ctrlKey && (ev.key === "y" || ev.key === "Y")) {
-    // Redo deletion.
     if (deletionRedoStack.length > 0) {
       let currentState = getWorkflowState();
       deletionUndoStack.push(currentState);
@@ -192,6 +183,45 @@ $(document).on("keydown", function(ev) {
     }
     ev.preventDefault();
   }
+});
+
+//////////////////////////////////////////////////////
+// --- Log Window Feature ---
+// The log button toggles the log window and establishes an SSE connection to stream logs.
+$(document).ready(function() {
+  // Toggle log window when log button is clicked.
+  $("#logButton").on("click", function() {
+    $("#logWindow").toggle();
+    if ($("#logWindow").is(":visible")) {
+      // Open SSE connection to /api/logs (you must implement this on the Flask side).
+      const logSource = new EventSource("/api/logs");
+      logSource.onmessage = function(e) {
+        // Ignore comment messages
+        if (e.data.startsWith(":")) return;
+        $("#logContent").append(e.data + "<br>");
+        $("#logWindow").scrollTop($("#logWindow")[0].scrollHeight);
+      };      
+      logSource.onerror = function(err) {
+        console.error("Log SSE error:", err);
+        logSource.close();
+      };
+      window.logSource = logSource;
+    } else {
+      if (window.logSource) {
+        window.logSource.close();
+        window.logSource = null;
+      }
+    }
+  });
+
+  // Close log window when the close icon is clicked.
+  $("#closeLogWindow").on("click", function() {
+    $("#logWindow").hide();
+    if (window.logSource) {
+      window.logSource.close();
+      window.logSource = null;
+    }
+  });
 });
 
 //////////////////////////////////////////////////////
@@ -213,12 +243,10 @@ $(document).ready(function() {
     let wfX = (x - panX) / zoom;
     let wfY = (y - panY) / zoom;
     addNode(type, wfX, wfY);
-    // (No deletion state saving on drop in this deletion-only undo/redo version.)
   });
 
   // --- Pan & Lasso Selection ---
   $("#canvas").on("mousedown", function(ev) {
-    // Lasso selection if CTRL is held and target is background.
     if (ev.ctrlKey && (ev.target.id === "canvas" || ev.target.id === "workflow")) {
       let $lasso = $("<div id='lasso-selection'></div>");
       $lasso.css({
@@ -267,7 +295,6 @@ $(document).ready(function() {
       ev.preventDefault();
       return;
     }
-    // Otherwise, if clicking on background for panning.
     if (ev.target.id === "canvas" || ev.target.id === "workflow" || ev.target.id === "svgOverlay") {
       $(".node").removeClass("selected");
       $(".anchor").removeClass("selected");
@@ -313,7 +340,7 @@ $(document).ready(function() {
   // --- Global Delete Key Handler (for deletion events only) ---
   $(document).on("keydown", function(ev) {
     if (ev.key === "Delete" || ev.keyCode === 46) {
-      // Save state BEFORE deletion so that we can undo the deletion.
+      // Save state BEFORE deletion.
       saveDeletionState();
       $(".node.selected").each(function() {
         let nodeId = $(this).data("id");
@@ -398,6 +425,11 @@ $(document).ready(function() {
         }
       };
       eventSource.onerror = function(err) {
+        // If the EventSource is already closed, ignore the error.
+        if (eventSource.readyState === EventSource.CLOSED) {
+          console.log("SSE connection closed normally.");
+          return;
+        }
         console.error("SSE error:", err);
         eventSource.close();
       };

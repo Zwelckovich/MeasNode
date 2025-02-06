@@ -1,4 +1,5 @@
 from app import BaseNode
+import logging
 
 class Node(BaseNode):
     title = "Integer Node"
@@ -14,4 +15,5 @@ class Node(BaseNode):
         self.parameters["value"] = 42
 
     def execute(self, **inputs):
+        logging.info(f"Integer Node {self.node_id} executing with value {self.parameters.get('value')}")
         return int(self.parameters.get("value", 0))
