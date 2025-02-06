@@ -1,9 +1,14 @@
 import os
 import importlib.util
 import mimetypes
-from flask import Flask, jsonify, render_template, request
+import uuid
+import json
+from flask import Flask, Response, jsonify, render_template, request
 
 app = Flask(__name__)
+
+# Global dictionary to store workflow processing generators keyed by token.
+pending_workflows = {}
 
 # ---------------- Base Node Class ------------------
 class BaseNode:
@@ -58,15 +63,6 @@ def load_node_modules():
 # ---------------- API Endpoint: /api/nodes ------------------
 @app.route("/api/nodes", methods=["GET"])
 def api_nodes():
-    """
-    Returns a JSON array of available node definitions.
-    Each node definition includes:
-      - title: the node title (unique)
-      - category: the node category (for grouping in the library)
-      - parameters: the parameter definitions (from parameters_def)
-      - inputs: the input definitions
-      - outputs: the output definitions
-    """
     node_classes = load_node_modules()
     definitions = []
     for title, cls in node_classes.items():
@@ -79,64 +75,95 @@ def api_nodes():
         })
     return jsonify(definitions)
 
-# ---------------- API Endpoint: /api/execute ------------------
+# ---------------- API Endpoint: /api/execute (POST) ------------------
 @app.route("/api/execute", methods=["POST"])
 def api_execute():
     """
-    Expects a JSON payload describing the workflow.
-    The workflow JSON should have a "nodes" array, where each node is defined with:
-      - id: unique node identifier
-      - type: the node title (to look up the corresponding Python class)
-      - parameters: parameter values (as entered by the user)
-      - connections: a mapping of input names to the source node IDs.
-    
-    This endpoint instantiates the nodes, sets up connections, recursively evaluates the nodes,
-    and returns the results of each "Result Node" in a JSON object.
+    Accepts a JSON payload describing the workflow, starts processing, and returns a unique token.
+    The processing will be streamed via SSE at the /api/execute_stream endpoint.
     """
     workflow = request.json
-    nodes = {}
-    node_classes = load_node_modules()
+    token = str(uuid.uuid4())
+    
+    def generate_progress():
+        nodes = {}
+        node_classes = load_node_modules()
 
-    # Instantiate nodes based on workflow payload.
-    for node_data in workflow.get("nodes", []):
-        node_type = node_data.get("type")
-        NodeClass = node_classes.get(node_type)
-        if NodeClass:
-            node_instance = NodeClass(node_id=node_data["id"])
-            node_instance.parameters.update(node_data.get("parameters", {}))
-            nodes[node_instance.node_id] = node_instance
+        # Instantiate nodes.
+        for node_data in workflow.get("nodes", []):
+            node_type = node_data.get("type")
+            NodeClass = node_classes.get(node_type)
+            if NodeClass:
+                node_instance = NodeClass(node_id=node_data["id"])
+                node_instance.parameters.update(node_data.get("parameters", {}))
+                nodes[node_instance.node_id] = node_instance
 
-    # Set up connections.
-    for node_data in workflow.get("nodes", []):
-        node_id = node_data.get("id")
-        node_instance = nodes.get(node_id)
-        for input_name, source_node_id in node_data.get("connections", {}).items():
-            if source_node_id in nodes:
-                source_node = nodes[source_node_id]
-                node_instance.input_connections[input_name] = (source_node, "output")
+        # Set up connections.
+        for node_data in workflow.get("nodes", []):
+            node_id = node_data.get("id")
+            node_instance = nodes.get(node_id)
+            for input_name, source_node_id in node_data.get("connections", {}).items():
+                if source_node_id in nodes:
+                    source_node = nodes[source_node_id]
+                    node_instance.input_connections[input_name] = (source_node, "output")
 
-    # Recursive evaluation.
-    def evaluate_node(node):
-        inputs = {}
-        for inp in node.inputs:
-            name = inp["name"]
-            if name in node.input_connections:
-                source_node, _ = node.input_connections[name]
-                inputs[name] = evaluate_node(source_node)
-            else:
-                inputs[name] = 0  # Default value if not connected.
-        return node.execute(**inputs)
+        processing_order = []
+        results = {}
 
-    results = {}
-    for node in nodes.values():
-        if node.title == "Result Node":
-            results[node.node_id] = evaluate_node(node)
-    return jsonify({"results": results})
+        def evaluate_node(node):
+            # First, evaluate all inputs (post-order):
+            inputs = {}
+            for inp in node.inputs:
+                name = inp["name"]
+                if name in node.input_connections:
+                    source_node, _ = node.input_connections[name]
+                    # Recursively evaluate the input and capture its result.
+                    value = yield from evaluate_node(source_node)
+                    inputs[name] = value
+                else:
+                    inputs[name] = 0
+            # After inputs are evaluated, yield PROCESSING event.
+            yield f"data: PROCESSING {node.node_id}\n\n"
+            result = node.execute(**inputs)
+            results[node.node_id] = result
+            processing_order.append(node.node_id)
+            yield f"data: DONE {node.node_id}\n\n"
+            return result
+
+        # Evaluate nodes of type "Result Node".
+        for node in nodes.values():
+            if node.title == "Result Node":
+                gen = evaluate_node(node)
+                try:
+                    for event in gen:
+                        yield event
+                except StopIteration as e:
+                    results[node.node_id] = e.value
+
+        # Finally, yield an END event with processing order and results.
+        yield f"data: END {json.dumps({'order': processing_order, 'results': results})}\n\n"
+
+    pending_workflows[token] = generate_progress()
+    return jsonify({"token": token})
+
+# ---------------- API Endpoint: /api/execute_stream (GET) ------------------
+@app.route("/api/execute_stream", methods=["GET"])
+def api_execute_stream():
+    token = request.args.get("token")
+    if not token or token not in pending_workflows:
+        return "Invalid token", 400
+    def stream():
+        gen = pending_workflows[token]
+        try:
+            for event in gen:
+                yield event
+        finally:
+            del pending_workflows[token]
+    return Response(stream(), mimetype="text/event-stream")
 
 # ---------------- Main Page Route ------------------
 @app.route("/")
 def index():
-    # Render the index.html template (should be placed in the "templates" folder).
     mimetypes.add_type('application/javascript', '.js')
     mimetypes.add_type('text/css', '.css')
     return render_template("index.html")

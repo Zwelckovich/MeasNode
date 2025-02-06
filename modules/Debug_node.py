@@ -1,4 +1,5 @@
 from app import BaseNode
+import time
 
 class Node(BaseNode):
     title = "Debug Node"
@@ -21,6 +22,7 @@ class Node(BaseNode):
         self.parameters["operation"] = "exp"
 
     def execute(self, **inputs):
+        time.sleep(2)
         a = inputs.get("a", 0)
         b = inputs.get("b", 0)
         c = inputs.get("c", 0)
