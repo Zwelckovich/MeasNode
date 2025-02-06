@@ -8,27 +8,25 @@ import { updateWiresForNode } from "./node.js";
  */
 function clientToLogical(clientX, clientY, zoomVal, panXVal, panYVal) {
   const canvasRect = document.getElementById("canvas").getBoundingClientRect();
+  const z = (zoomVal !== undefined) ? zoomVal : (window.zoom || 1);
+  const panX = (panXVal !== undefined) ? panXVal : (window.panX || 0);
+  const panY = (panYVal !== undefined) ? panYVal : (window.panY || 0);
   return {
-    x: (clientX - canvasRect.left - panXVal) / zoomVal,
-    y: (clientY - canvasRect.top - panYVal) / zoomVal
+    x: (clientX - canvasRect.left - panX) / z,
+    y: (clientY - canvasRect.top - panY) / z
   };
 }
 
 /**
  * Makes a node draggable.
  * Supports group dragging if multiple nodes are selected.
- * 
- * For group dragging:
- *  - At drag start, we freeze the current pan/zoom values.
- *  - We record the initial mouse screen coordinates.
- *  - For each selected node, we record its initial left and top values (as numbers) 
- *    from its inline CSS (assumed to be in workflow coordinates).
- *  - On each mousemove, we compute the screen delta (difference in client coordinates),
- *    convert that delta into workflow delta by dividing by the fixed zoom, and then
- *    set each node’s new position to its recorded initial position plus the workflow delta.
- * 
- * For single-node dragging, we use the original offset‑based logic (with current global pan/zoom).
- * In all cases, the new positions are clamped within the workflow border (0 to 10000).
+ * For group dragging, we freeze the pan/zoom values at drag start, record the initial mouse screen coordinates,
+ * and record each selected node's initial left/top (read from inline CSS) as numbers.
+ * On mousemove, we compute the screen delta, convert that delta to workflow delta (by dividing by the fixed zoom),
+ * and update each node's position as its initial position plus the delta.
+ * The new positions are clamped to remain within the workflow border, whose width and height
+ * are read dynamically from the #workflow element.
+ * For single-node dragging, the original offset-based logic is used.
  */
 export function makeDraggable($node) {
   $node.on("mousedown", function(ev) {
@@ -49,7 +47,7 @@ export function makeDraggable($node) {
     const initialClientX = ev.clientX;
     const initialClientY = ev.clientY;
     
-    // Compute the initial mouse workflow coordinates using the fixed pan/zoom.
+    // Compute the initial mouse workflow coordinates using fixed pan/zoom.
     let initialMouseWF = clientToLogical(ev.clientX, ev.clientY, fixedZoom, fixedPanX, fixedPanY);
     
     // Get the canvas's bounding rectangle.
@@ -76,21 +74,20 @@ export function makeDraggable($node) {
     });
     
     function onMouseMove(ev2) {
-      // Define workflow boundaries.
-      const workflowWidth = 10000;
-      const workflowHeight = 10000;
+      // Dynamically read workflow boundaries from the #workflow element.
+      const workflowWidth = $("#workflow").width();
+      const workflowHeight = $("#workflow").height();
       
       if ($selectedNodes.length > 1) {
-        // For group dragging, compute the screen delta from the initial mouse position.
+        // Group dragging: compute the screen delta from the initial mouse position.
         let deltaScreenX = ev2.clientX - initialClientX;
         let deltaScreenY = ev2.clientY - initialClientY;
         
-        // Convert the screen delta to workflow delta using the fixed zoom.
+        // Convert screen delta to workflow delta using the fixed zoom.
         let deltaWFX = deltaScreenX / fixedZoom;
         let deltaWFY = deltaScreenY / fixedZoom;
         
-        // For each selected node, update its position as:
-        // new position = recorded initial position + workflow delta.
+        // For each selected node, update its position.
         $selectedNodes.each(function() {
           let nodeId = $(this).data("id");
           let origPos = groupInitialPositions[nodeId];
@@ -108,7 +105,7 @@ export function makeDraggable($node) {
           updateWiresForNode($(this));
         });
       } else {
-        // For single-node dragging, use the original offset-based logic with current global pan/zoom.
+        // Single node dragging: use the original offset-based logic with current global pan/zoom.
         let currentZoom = window.zoom || 1;
         let currentPanX = window.panX || 0;
         let currentPanY = window.panY || 0;
