@@ -1,4 +1,4 @@
-// node.js
+// node.js (version 0.1.38)
 import { updateWirePath } from "./utils.js"; // Ensure this is exported from utils.js
 
 // Ensure the global nodes object exists.
@@ -154,7 +154,7 @@ function addNode(type, x, y) {
       fromNode: $anchor.closest(".node"),
       fromAnchor: $anchor.attr("data-anchor"),
       fromType: $anchor.hasClass("output") ? "output" : "input",
-      fromAnchorElement: $anchor, // store reference
+      fromAnchorElement: $anchor,
       startX: pos.x,
       startY: pos.y
     };
@@ -187,14 +187,27 @@ function addNode(type, x, y) {
     }
   });
   
-  // Attach normal mousedown handler for node selection.
+  // Attach mousedown handler for node selection with multi-select support.
   $node.on("mousedown", function(ev) {
     if ($(ev.target).closest(".anchor").length > 0 || $(ev.target).closest(".anchor-label").length > 0) {
       return;
     }
     if (ev.target.tagName === "INPUT" || ev.target.tagName === "SELECT") return;
     if (ev.which === 1) {
-      selectNode($(this));
+      // If CTRL is held, toggle selection; otherwise, if multiple nodes are already selected, keep group selection intact.
+      if (ev.ctrlKey) {
+        if ($(this).hasClass("selected")) {
+          $(this).removeClass("selected");
+        } else {
+          $(this).addClass("selected");
+        }
+      } else {
+        // If more than one node is already selected, do not clear the selection.
+        // Otherwise, clear any existing selection and select this node.
+        if ($(".node.selected").length <= 1) {
+          selectNode($(this));
+        }
+      }
       ev.stopPropagation();
     }
   });
@@ -203,7 +216,7 @@ function addNode(type, x, y) {
   return $node;
 }
 
-// Function to select a node (adds a blue border and deselects others).
+// Function to select a node (clears selection and selects the given node).
 function selectNode($node) {
   $(".node").removeClass("selected");
   $node.addClass("selected");
