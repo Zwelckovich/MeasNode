@@ -11,16 +11,17 @@ export function showContextMenu(x, y, $node) {
   `);
   $menu.css({ left: x, top: y });
   $("body").append($menu);
+  
   $menu.find("#deleteNode").on("click", function() {
-    let nodeId = $node.data("id");
-    window.wires = window.wires.filter(function(w) {
-      if (w.fromNode === nodeId || w.toNode === nodeId) {
-        $(w.line).remove();
-        return false;
-      }
-      return true;
-    });
-    $node.remove();
+    // If the right-clicked node is selected, delete all selected nodes.
+    if ($node.hasClass("selected")) {
+      $(".node.selected").each(function() {
+        deleteNode($(this));
+      });
+    } else {
+      // Otherwise, delete only the node that was right-clicked.
+      deleteNode($node);
+    }
     removeContextMenu();
   });
 }
@@ -49,4 +50,19 @@ export function showAnchorContextMenu(x, y, $anchor, connection) {
 
 export function removeContextMenu() {
   $(".context-menu").remove();
+}
+
+// Helper function to delete a node and remove its associated wires.
+function deleteNode($node) {
+  const nodeId = $node.data("id");
+  // Remove wires connected to this node.
+  window.wires = window.wires.filter(function(w) {
+    if (w.fromNode === nodeId || w.toNode === nodeId) {
+      $(w.line).remove();
+      return false;
+    }
+    return true;
+  });
+  // Remove the node element.
+  $node.remove();
 }

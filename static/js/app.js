@@ -1,4 +1,4 @@
-// app.js (version 0.2.1)
+// app.js (version 0.2.2)
 // Ensure jQuery is loaded globally (from index.html) before this module runs.
 
 // Import modules (adjust paths if necessary)
@@ -19,6 +19,8 @@ window.nodeCounter = 0;
 window.wires = [];
 window.currentWire = null;
 window.currentWireLine = null;
+
+// Expose nodeDefinitions and makeDraggable globally if needed.
 window.nodeDefinitions = nodeDefinitions;
 window.makeDraggable = makeDraggable;
 
@@ -33,6 +35,7 @@ window.zoom = zoom;
 window.panX = panX;
 window.panY = panY;
 
+// Update the transform on the workflow container.
 function updateWorkflowTransform() {
   $("#workflow").css("transform", `translate(${panX}px, ${panY}px) scale(${zoom})`);
 }
@@ -56,96 +59,80 @@ $(document).ready(function() {
     addNode(type, wfX, wfY);
   });
 
-  // --- Pan & Zoom ---
+  // --- Pan & Lasso Selection ---
   $("#canvas").on("mousedown", function(ev) {
-    // If CTRL is not held OR the click target is not the background, do not start lasso.
-    if (ev.ctrlKey) {
-      // Lasso selection mode.
-      // Only start lasso if the target is the background (i.e. not a node or anchor).
-      if (ev.target.id === "canvas" || ev.target.id === "workflow") {
-        // Create a new lasso div.
-        let $lasso = $("<div id='lasso-selection'></div>");
-        $lasso.css({
-          position: "absolute",
-          border: "1px dashed #fff",
-          "background-color": "rgba(0, 150, 255, 0.2)",
-          left: ev.pageX,
-          top: ev.pageY,
-          width: 0,
-          height: 0,
-          zIndex: 5000
+    // Lasso selection if CTRL key is held and click target is background.
+    if (ev.ctrlKey && (ev.target.id === "canvas" || ev.target.id === "workflow")) {
+      let $lasso = $("<div id='lasso-selection'></div>");
+      $lasso.css({
+        position: "absolute",
+        border: "1px dashed #fff",
+        "background-color": "rgba(0, 150, 255, 0.2)",
+        left: ev.pageX,
+        top: ev.pageY,
+        width: 0,
+        height: 0,
+        zIndex: 5000
+      });
+      $("body").append($lasso);
+      let startX = ev.pageX;
+      let startY = ev.pageY;
+      $(document).on("mousemove.lasso", function(ev2) {
+        let currX = ev2.pageX;
+        let currY = ev2.pageY;
+        let left = Math.min(startX, currX);
+        let top = Math.min(startY, currY);
+        let width = Math.abs(currX - startX);
+        let height = Math.abs(currY - startY);
+        $lasso.css({ left: left, top: top, width: width, height: height });
+      });
+      $(document).on("mouseup.lasso", function(ev3) {
+        let lassoOffset = $lasso.offset();
+        let lassoWidth = $lasso.outerWidth();
+        let lassoHeight = $lasso.outerHeight();
+        $(".node").each(function() {
+          let $node = $(this);
+          let nodeOffset = $node.offset();
+          let nodeWidth = $node.outerWidth();
+          let nodeHeight = $node.outerHeight();
+          if (nodeOffset.left >= lassoOffset.left &&
+              nodeOffset.top >= lassoOffset.top &&
+              (nodeOffset.left + nodeWidth) <= (lassoOffset.left + lassoWidth) &&
+              (nodeOffset.top + nodeHeight) <= (lassoOffset.top + lassoHeight)) {
+            $node.addClass("selected");
+          }
         });
-        $("body").append($lasso);
-        let startX = ev.pageX;
-        let startY = ev.pageY;
-        $(document).on("mousemove.lasso", function(ev2) {
-          let currX = ev2.pageX;
-          let currY = ev2.pageY;
-          let left = Math.min(startX, currX);
-          let top = Math.min(startY, currY);
-          let width = Math.abs(currX - startX);
-          let height = Math.abs(currY - startY);
-          $lasso.css({
-            left: left,
-            top: top,
-            width: width,
-            height: height
-          });
-        });
-        $(document).on("mouseup.lasso", function(ev3) {
-          // Get the final lasso rectangle.
-          let lassoOffset = $lasso.offset();
-          let lassoWidth = $lasso.outerWidth();
-          let lassoHeight = $lasso.outerHeight();
-          // Iterate over all nodes and select those whose bounding boxes are fully within the lasso.
-          $(".node").each(function() {
-            let $node = $(this);
-            let nodeOffset = $node.offset();
-            let nodeWidth = $node.outerWidth();
-            let nodeHeight = $node.outerHeight();
-            // Check if the node's rectangle is completely inside the lasso.
-            if (nodeOffset.left >= lassoOffset.left &&
-                nodeOffset.top >= lassoOffset.top &&
-                (nodeOffset.left + nodeWidth) <= (lassoOffset.left + lassoWidth) &&
-                (nodeOffset.top + nodeHeight) <= (lassoOffset.top + lassoHeight)) {
-              $node.addClass("selected");
-            }
-          });
-          $lasso.remove();
-          $(document).off("mousemove.lasso mouseup.lasso");
-        });
-        // Prevent further handling.
-        ev.preventDefault();
-        return;
-      }
-    } else {
-      // If not in lasso mode, then check if the click is on the background.
-      if (ev.target.id === "canvas" || ev.target.id === "workflow" || ev.target.id === "svgOverlay") {
-        // Clear any selection.
-        $(".node").removeClass("selected");
-        $(".anchor").removeClass("selected");
-        removeContextMenu();
-        
-        let panStartX = ev.pageX;
-        let panStartY = ev.pageY;
-        $(document).on("mousemove.pan", function(ev2) {
-          let dx = ev2.pageX - panStartX;
-          let dy = ev2.pageY - panStartY;
-          panX += dx;
-          panY += dy;
-          window.panX = panX;
-          window.panY = panY;
-          updateWorkflowTransform();
-          panStartX = ev2.pageX;
-          panStartY = ev2.pageY;
-        });
-        $(document).on("mouseup.pan", function() {
-          $(document).off("mousemove.pan mouseup.pan");
-        });
-      }
+        $lasso.remove();
+        $(document).off("mousemove.lasso mouseup.lasso");
+      });
+      ev.preventDefault();
+      return;
+    }
+    // Otherwise, if clicking on the background (not on a node), do pan.
+    if (ev.target.id === "canvas" || ev.target.id === "workflow" || ev.target.id === "svgOverlay") {
+      $(".node").removeClass("selected");
+      $(".anchor").removeClass("selected");
+      removeContextMenu();
+      let panStartX = ev.pageX;
+      let panStartY = ev.pageY;
+      $(document).on("mousemove.pan", function(ev2) {
+        let dx = ev2.pageX - panStartX;
+        let dy = ev2.pageY - panStartY;
+        panX += dx;
+        panY += dy;
+        window.panX = panX;
+        window.panY = panY;
+        updateWorkflowTransform();
+        panStartX = ev2.pageX;
+        panStartY = ev2.pageY;
+      });
+      $(document).on("mouseup.pan", function() {
+        $(document).off("mousemove.pan mouseup.pan");
+      });
     }
   });
 
+  // --- Zoom ---
   $("#canvas").on("wheel", function(ev) {
     ev.preventDefault();
     let canvasOffset = $("#canvas").offset();
@@ -166,10 +153,29 @@ $(document).ready(function() {
 
   // --- Wiring events are handled in wiring.js ---
 
+  // --- Global Delete Key Handler ---
+  $(document).on("keydown", function(ev) {
+    // Check if the Delete key (key code 46) is pressed.
+    if (ev.key === "Delete" || ev.keyCode === 46) {
+      // Remove all selected nodes.
+      $(".node.selected").each(function() {
+        // Remove associated wires.
+        let nodeId = $(this).data("id");
+        window.wires = window.wires.filter(function(w) {
+          if (w.fromNode === nodeId || w.toNode === nodeId) {
+            $(w.line).remove();
+            return false;
+          }
+          return true;
+        });
+        $(this).remove();
+      });
+    }
+  });
+
   // --- Start Button & SSE Processing ---
   $("#startBtn").on("click", function() {
     $(".node").removeClass("processing");
-    
     let workflow = { nodes: [] };
     let nodeConnections = {};
     window.wires.forEach(function(w) {
@@ -219,7 +225,7 @@ $(document).ready(function() {
           $(".node").removeClass("processing");
           $(".node[data-id='" + nodeId + "']").addClass("processing");
         } else if (e.data.startsWith("DONE")) {
-          // Optionally update for DONE events.
+          // Optionally handle DONE events.
         } else if (e.data.startsWith("END")) {
           try {
             const endData = JSON.parse(e.data.replace("END ", ""));
