@@ -1,4 +1,4 @@
-// app.js (version 0.2.2)
+// app.js (version 0.2.2-deletion-undo-only-final2)
 // Ensure jQuery is loaded globally (from index.html) before this module runs.
 
 // Import modules (adjust paths if necessary)
@@ -24,7 +24,7 @@ window.currentWireLine = null;
 window.nodeDefinitions = nodeDefinitions;
 window.makeDraggable = makeDraggable;
 
-// === New Feature: Zoom and Pan on Workflow ===
+// === Zoom and Pan on Workflow ===
 // The pan/zoom transforms are applied to the #workflow container.
 let zoom = 1.0;
 let panX = 0;
@@ -35,11 +35,167 @@ window.zoom = zoom;
 window.panX = panX;
 window.panY = panY;
 
-// Update the transform on the workflow container.
 function updateWorkflowTransform() {
   $("#workflow").css("transform", `translate(${panX}px, ${panY}px) scale(${zoom})`);
 }
 
+//////////////////////////////////////////////////////
+// --- Deletion Undo/Redo State Management ---
+// We maintain two stacks for deletion events only.
+let deletionUndoStack = [];
+let deletionRedoStack = [];
+
+// Helper: Log deletion undo stack for debugging.
+function logDeletionUndoStack(action) {
+  console.log(`DELETION UNDO STACK after ${action}: Length = ${deletionUndoStack.length}`);
+  if (deletionUndoStack.length > 0) {
+    console.log("Top deletion state:", JSON.stringify(deletionUndoStack[deletionUndoStack.length - 1]));
+  }
+}
+
+// Capture the current workflow state (nodes and wires).
+function getWorkflowState() {
+  let state = { nodes: [], wires: [] };
+  $(".node").each(function() {
+    let $node = $(this);
+    state.nodes.push({
+      id: $node.data("id"),
+      type: $node.data("type"),
+      left: parseFloat($node.css("left")),
+      top: parseFloat($node.css("top")),
+      parameters: (function(){
+         let params = {};
+         $node.find(".parameters input, .parameters select").each(function() {
+           let cls = $(this).attr("class") || "";
+           let match = cls.match(/param-([\w-]+)/);
+           if (match) {
+             params[match[1]] = $(this).val();
+           }
+         });
+         return params;
+      })()
+    });
+  });
+  // Capture wires from window.wires.
+  state.wires = window.wires.map(w => ({
+    fromNode: w.fromNode,
+    fromAnchor: w.fromAnchor,
+    toNode: w.toNode,
+    toAnchor: w.toAnchor
+  }));
+  return state;
+}
+
+// Restore the workflow state.
+function restoreWorkflowState(state) {
+  // Clear the workflow container.
+  $("#workflow").empty();
+  // Re-add the SVG overlay element.
+  $("#workflow").append('<svg id="svgOverlay"></svg>');
+  
+  window.wires = [];
+  window.nodes = {};
+  // Recreate nodes from the snapshot.
+  state.nodes.forEach(n => {
+    let $node = addNode(n.type, n.left, n.top);
+    // Restore parameter values.
+    $node.find(".parameters input, .parameters select").each(function() {
+      let cls = $(this).attr("class") || "";
+      let match = cls.match(/param-([\w-]+)/);
+      if (match && n.parameters.hasOwnProperty(match[1])) {
+        $(this).val(n.parameters[match[1]]);
+      }
+    });
+    // Overwrite the auto-generated id with the saved id.
+    $node.attr("data-id", n.id);
+    window.nodes[n.id] = $node;
+  });
+  // Recreate wires.
+  state.wires.forEach(wireData => {
+    createWireFromData(wireData);
+  });
+  updateWorkflowTransform();
+}
+
+// Save the current deletion state BEFORE performing a deletion.
+function saveDeletionState() {
+  let state = getWorkflowState();
+  deletionUndoStack.push(state);
+  deletionRedoStack = [];
+  logDeletionUndoStack("saveDeletionState");
+}
+
+//////////////////////////////////////////////////////
+// Helper: getAnchorCenter
+function getAnchorCenter($anchor) {
+  const wfElem = document.getElementById("workflow");
+  const wfRect = wfElem.getBoundingClientRect();
+  const anchorRect = $anchor[0].getBoundingClientRect();
+  const centerX = (anchorRect.left + anchorRect.right) / 2;
+  const centerY = (anchorRect.top + anchorRect.bottom) / 2;
+  const currentZoom = window.zoom || 1;
+  return {
+    x: (centerX - wfRect.left) / currentZoom,
+    y: (centerY - wfRect.top) / currentZoom
+  };
+}
+
+//////////////////////////////////////////////////////
+// Helper: createWireFromData
+function createWireFromData(wireData) {
+  let $fromNode = window.nodes[wireData.fromNode];
+  let $toNode = window.nodes[wireData.toNode];
+  if (!$fromNode || !$toNode) return;
+  let $fromAnchor = $fromNode.find(`.anchor.output[data-anchor="${wireData.fromAnchor}"]`);
+  let $toAnchor = $toNode.find(`.anchor.input[data-anchor="${wireData.toAnchor}"]`);
+  if (!$fromAnchor.length || !$toAnchor.length) return;
+  let newLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  newLine.setAttribute("stroke", "#fff");
+  newLine.setAttribute("stroke-width", "2");
+  newLine.setAttribute("fill", "none");
+  document.getElementById("svgOverlay").appendChild(newLine);
+  let startPos = getAnchorCenter($fromAnchor);
+  let endPos = getAnchorCenter($toAnchor);
+  newLine.setAttribute("d", updateWirePath(startPos.x, startPos.y, endPos.x, endPos.y));
+  window.wires.push({
+    fromNode: wireData.fromNode,
+    fromAnchor: wireData.fromAnchor,
+    toNode: wireData.toNode,
+    toAnchor: wireData.toAnchor,
+    line: newLine,
+    lineStartX: startPos.x,
+    lineStartY: startPos.y
+  });
+}
+
+//////////////////////////////////////////////////////
+// Global Key Handlers for Deletion Undo/Redo (Deletion events only)
+$(document).on("keydown", function(ev) {
+  if (ev.ctrlKey && (ev.key === "z" || ev.key === "Z")) {
+    // Undo deletion.
+    if (deletionUndoStack.length > 0) {
+      let currentState = getWorkflowState();
+      deletionRedoStack.push(currentState);
+      let prevState = deletionUndoStack.pop();
+      restoreWorkflowState(prevState);
+      logDeletionUndoStack("UNDO");
+    }
+    ev.preventDefault();
+  } else if (ev.ctrlKey && (ev.key === "y" || ev.key === "Y")) {
+    // Redo deletion.
+    if (deletionRedoStack.length > 0) {
+      let currentState = getWorkflowState();
+      deletionUndoStack.push(currentState);
+      let nextState = deletionRedoStack.pop();
+      restoreWorkflowState(nextState);
+      logDeletionUndoStack("REDO");
+    }
+    ev.preventDefault();
+  }
+});
+
+//////////////////////////////////////////////////////
+// Main Document Ready
 $(document).ready(function() {
   initLibrary();
   initWiring();
@@ -57,11 +213,12 @@ $(document).ready(function() {
     let wfX = (x - panX) / zoom;
     let wfY = (y - panY) / zoom;
     addNode(type, wfX, wfY);
+    // (No deletion state saving on drop in this deletion-only undo/redo version.)
   });
 
   // --- Pan & Lasso Selection ---
   $("#canvas").on("mousedown", function(ev) {
-    // Lasso selection if CTRL key is held and click target is background.
+    // Lasso selection if CTRL is held and target is background.
     if (ev.ctrlKey && (ev.target.id === "canvas" || ev.target.id === "workflow")) {
       let $lasso = $("<div id='lasso-selection'></div>");
       $lasso.css({
@@ -90,25 +247,27 @@ $(document).ready(function() {
         let lassoOffset = $lasso.offset();
         let lassoWidth = $lasso.outerWidth();
         let lassoHeight = $lasso.outerHeight();
-        $(".node").each(function() {
-          let $node = $(this);
-          let nodeOffset = $node.offset();
-          let nodeWidth = $node.outerWidth();
-          let nodeHeight = $node.outerHeight();
-          if (nodeOffset.left >= lassoOffset.left &&
-              nodeOffset.top >= lassoOffset.top &&
-              (nodeOffset.left + nodeWidth) <= (lassoOffset.left + lassoWidth) &&
-              (nodeOffset.top + nodeHeight) <= (lassoOffset.top + lassoHeight)) {
-            $node.addClass("selected");
-          }
-        });
+        if (lassoWidth > 0 && lassoHeight > 0) {
+          $(".node").each(function() {
+            let $node = $(this);
+            let nodeOffset = $node.offset();
+            let nodeWidth = $node.outerWidth();
+            let nodeHeight = $node.outerHeight();
+            if (nodeOffset.left >= lassoOffset.left &&
+                nodeOffset.top >= lassoOffset.top &&
+                (nodeOffset.left + nodeWidth) <= (lassoOffset.left + lassoWidth) &&
+                (nodeOffset.top + nodeHeight) <= (lassoOffset.top + lassoHeight)) {
+              $node.addClass("selected");
+            }
+          });
+        }
         $lasso.remove();
         $(document).off("mousemove.lasso mouseup.lasso");
       });
       ev.preventDefault();
       return;
     }
-    // Otherwise, if clicking on the background (not on a node), do pan.
+    // Otherwise, if clicking on background for panning.
     if (ev.target.id === "canvas" || ev.target.id === "workflow" || ev.target.id === "svgOverlay") {
       $(".node").removeClass("selected");
       $(".anchor").removeClass("selected");
@@ -151,15 +310,12 @@ $(document).ready(function() {
     updateWorkflowTransform();
   });
 
-  // --- Wiring events are handled in wiring.js ---
-
-  // --- Global Delete Key Handler ---
+  // --- Global Delete Key Handler (for deletion events only) ---
   $(document).on("keydown", function(ev) {
-    // Check if the Delete key (key code 46) is pressed.
     if (ev.key === "Delete" || ev.keyCode === 46) {
-      // Remove all selected nodes.
+      // Save state BEFORE deletion so that we can undo the deletion.
+      saveDeletionState();
       $(".node.selected").each(function() {
-        // Remove associated wires.
         let nodeId = $(this).data("id");
         window.wires = window.wires.filter(function(w) {
           if (w.fromNode === nodeId || w.toNode === nodeId) {
@@ -170,6 +326,8 @@ $(document).ready(function() {
         });
         $(this).remove();
       });
+      console.log("Deletion event: Nodes deleted.");
+      ev.preventDefault();
     }
   });
 
