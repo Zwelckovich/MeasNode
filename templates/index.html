@@ -3,9 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <title>Web-Based Node Editor</title>
-  <!-- Optional: Add a favicon (ensure you have favicon.ico in your static folder) -->
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
   <style>
+    /* Define CSS custom properties for common layout values */
+    :root {
+      --node-width: 200px;
+      --node-title-height: 30px;
+      --anchor-area-top: 35px;
+      --anchor-spacing: 20px;
+      --field-line-height: 25px;
+      --field-padding: 10px;
+      --min-zoom: 0.2;
+      --max-zoom: 4.0;
+    }
+
     /* Global reset and base styles */
     body {
       margin: 0;
@@ -17,14 +28,14 @@
     }
     /* Sidebar (left menu bar) */
     #sidebar {
-      width: 120px;  /* 100px button width + 20px extra */
+      width: 120px;
       background: #f0f0f0;
       border-right: 1px solid #ccc;
       padding: 10px 0;
       box-sizing: border-box;
       overflow-y: auto;
       position: relative;
-      z-index: 10000; /* Always on top */
+      z-index: 10000;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
@@ -86,7 +97,7 @@
         linear-gradient(to right, #282828 1px, transparent 1px),
         linear-gradient(to bottom, #282828 1px, transparent 1px);
       background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
-      border: 2px solid red;  /* Debugging: Red border to indicate workflow area */
+      border: 2px solid red;
     }
     /* SVG overlay for wiring */
     #svgOverlay {
@@ -96,12 +107,12 @@
       pointer-events: none;
       width: 100%;
       height: 100%;
-      z-index: 200; /* Wires appear above workflow but below nodes */
+      z-index: 200;
     }
     /* Node styling */
     .node {
       position: absolute;
-      width: 200px;
+      width: var(--node-width);
       min-height: 120px;
       background: #444;
       border: 2px solid transparent;
@@ -111,7 +122,7 @@
       box-sizing: border-box;
       cursor: move;
       user-select: none;
-      z-index: 300 !important; /* Nodes appear above wiring and background */
+      z-index: 300 !important;
     }
     .node.selected {
       border-color: blue;
@@ -159,7 +170,7 @@
     .anchor-label {
       pointer-events: none !important;
     }
-    /* Library Popup styling (created dynamically by library.js) */
+    /* Library Popup styling */
     #libraryPopup {
       position: fixed;
       width: 200px;
@@ -169,7 +180,7 @@
       overflow-y: auto;
       padding: 10px;
       box-sizing: border-box;
-      z-index: 10000;
+      z-index: 1000;
       display: none;
     }
     #closeLibraryPopup {
@@ -177,14 +188,27 @@
       cursor: pointer;
       margin-bottom: 10px;
     }
-    #libraryItems {
-      /* Populated dynamically by app.js */
+    /* Context Menu styling */
+    .context-menu {
+      position: fixed;
+      background: #ccc;
+      padding: 5px;
+      border: 1px solid #999;
+      z-index: 2000;
+    }
+    .context-menu ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .context-menu li {
+      cursor: pointer;
     }
     /* Log Window styling */
     #logWindow {
       position: fixed;
       bottom: 0;
-      left: 120px;  /* aligned to the right of the sidebar */
+      left: 120px;
       right: 0;
       height: 200px;
       background: #111;
@@ -231,7 +255,6 @@
     <div id="logContent"></div>
   </div>
   
-  <!-- Debug: Log a message when the Library button is clicked -->
   <script>
     document.addEventListener("DOMContentLoaded", function() {
       console.log("DOM fully loaded and parsed.");

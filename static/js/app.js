@@ -1,36 +1,33 @@
-// app.js (version 0.2.3)
-// Ensure jQuery is loaded globally (from index.html) before this module runs.
-
-// Import modules (adjust paths if necessary)
 import { initLibrary } from "./library.js";
-import { addNode, nodeDefinitions, titleHeight, anchorAreaTop, anchorSpacing } from "./node.js";
+import { addNode, nodeDefinitions, updateWiresForNode } from "./node.js";
 import { initWiring } from "./wiring.js";
 import { makeDraggable } from "./dragdrop.js";
 import { showContextMenu, showAnchorContextMenu, removeContextMenu } from "./contextMenu.js";
-import { updateWirePath } from "./utils.js"; // For wiring
+import { updateWirePath } from "./utils.js";
 
-// Attach context menu functions to window so they are available globally.
+// Expose context menu functions globally.
 window.showContextMenu = showContextMenu;
 window.showAnchorContextMenu = showAnchorContextMenu;
 window.removeContextMenu = removeContextMenu;
 
-// Global variables for wiring and node count.
+// Global variables for nodes, wiring, and node definitions.
 window.nodeCounter = 0;
 window.wires = [];
 window.currentWire = null;
 window.currentWireLine = null;
-
-// Expose nodeDefinitions and makeDraggable globally if needed.
 window.nodeDefinitions = nodeDefinitions;
 window.makeDraggable = makeDraggable;
 
-// === Zoom and Pan on Workflow ===
-// The pan/zoom transforms are applied to the #workflow container.
+// Helper function to read a CSS custom property as a number.
+function getCssVarNumber(varName) {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(varName));
+}
+
 let zoom = 1.0;
 let panX = 0;
 let panY = 0;
-const minZoom = 0.2;
-const maxZoom = 4.0;
+const minZoom = getCssVarNumber('--min-zoom') || 0.2;
+const maxZoom = getCssVarNumber('--max-zoom') || 4.0;
 window.zoom = zoom;
 window.panX = panX;
 window.panY = panY;
@@ -41,11 +38,9 @@ function updateWorkflowTransform() {
 
 //////////////////////////////////////////////////////
 // --- Deletion Undo/Redo State Management ---
-// (This version implements deletion-only undo/redo.)
 let deletionUndoStack = [];
 let deletionRedoStack = [];
 
-// Helper: Log deletion undo stack for debugging.
 function logDeletionUndoStack(action) {
   console.log(`DELETION UNDO STACK after ${action}: Length = ${deletionUndoStack.length}`);
   if (deletionUndoStack.length > 0) {
@@ -53,7 +48,6 @@ function logDeletionUndoStack(action) {
   }
 }
 
-// Capture the current workflow state (nodes and wires).
 function getWorkflowState() {
   let state = { nodes: [], wires: [] };
   $(".node").each(function() {
@@ -85,7 +79,6 @@ function getWorkflowState() {
   return state;
 }
 
-// Restore the workflow state.
 function restoreWorkflowState(state) {
   $("#workflow").empty();
   $("#workflow").append('<svg id="svgOverlay"></svg>');
@@ -110,7 +103,6 @@ function restoreWorkflowState(state) {
   updateWorkflowTransform();
 }
 
-// Save the current deletion state BEFORE performing a deletion.
 function saveDeletionState() {
   let state = getWorkflowState();
   deletionUndoStack.push(state);
@@ -118,8 +110,6 @@ function saveDeletionState() {
   logDeletionUndoStack("saveDeletionState");
 }
 
-//////////////////////////////////////////////////////
-// Helper: getAnchorCenter
 function getAnchorCenter($anchor) {
   const wfElem = document.getElementById("workflow");
   const wfRect = wfElem.getBoundingClientRect();
@@ -133,8 +123,6 @@ function getAnchorCenter($anchor) {
   };
 }
 
-//////////////////////////////////////////////////////
-// Helper: createWireFromData
 function createWireFromData(wireData) {
   let $fromNode = window.nodes[wireData.fromNode];
   let $toNode = window.nodes[wireData.toNode];
@@ -161,8 +149,6 @@ function createWireFromData(wireData) {
   });
 }
 
-//////////////////////////////////////////////////////
-// Global Key Handlers for Deletion Undo/Redo (Deletion events only)
 $(document).on("keydown", function(ev) {
   if (ev.ctrlKey && (ev.key === "z" || ev.key === "Z")) {
     if (deletionUndoStack.length > 0) {
@@ -185,18 +171,12 @@ $(document).on("keydown", function(ev) {
   }
 });
 
-//////////////////////////////////////////////////////
-// --- Log Window Feature ---
-// The log button toggles the log window and establishes an SSE connection to stream logs.
 $(document).ready(function() {
-  // Toggle log window when log button is clicked.
   $("#logButton").on("click", function() {
     $("#logWindow").toggle();
     if ($("#logWindow").is(":visible")) {
-      // Open SSE connection to /api/logs (you must implement this on the Flask side).
       const logSource = new EventSource("/api/logs");
       logSource.onmessage = function(e) {
-        // Ignore comment messages
         if (e.data.startsWith(":")) return;
         $("#logContent").append(e.data + "<br>");
         $("#logWindow").scrollTop($("#logWindow")[0].scrollHeight);
@@ -214,7 +194,6 @@ $(document).ready(function() {
     }
   });
 
-  // Close log window when the close icon is clicked.
   $("#closeLogWindow").on("click", function() {
     $("#logWindow").hide();
     if (window.logSource) {
@@ -224,13 +203,10 @@ $(document).ready(function() {
   });
 });
 
-//////////////////////////////////////////////////////
-// Main Document Ready
 $(document).ready(function() {
   initLibrary();
   initWiring();
 
-  // --- Drag & Drop for Nodes ---
   $("#canvas").on("dragover", function(ev) {
     ev.preventDefault();
   });
@@ -245,7 +221,6 @@ $(document).ready(function() {
     addNode(type, wfX, wfY);
   });
 
-  // --- Pan & Lasso Selection ---
   $("#canvas").on("mousedown", function(ev) {
     if (ev.ctrlKey && (ev.target.id === "canvas" || ev.target.id === "workflow")) {
       let $lasso = $("<div id='lasso-selection'></div>");
@@ -318,7 +293,6 @@ $(document).ready(function() {
     }
   });
 
-  // --- Zoom ---
   $("#canvas").on("wheel", function(ev) {
     ev.preventDefault();
     let canvasOffset = $("#canvas").offset();
@@ -337,10 +311,8 @@ $(document).ready(function() {
     updateWorkflowTransform();
   });
 
-  // --- Global Delete Key Handler (for deletion events only) ---
   $(document).on("keydown", function(ev) {
     if (ev.key === "Delete" || ev.keyCode === 46) {
-      // Save state BEFORE deletion.
       saveDeletionState();
       $(".node.selected").each(function() {
         let nodeId = $(this).data("id");
@@ -358,7 +330,6 @@ $(document).ready(function() {
     }
   });
 
-  // --- Start Button & SSE Processing ---
   $("#startBtn").on("click", function() {
     $(".node").removeClass("processing");
     let workflow = { nodes: [] };
@@ -410,7 +381,6 @@ $(document).ready(function() {
           $(".node").removeClass("processing");
           $(".node[data-id='" + nodeId + "']").addClass("processing");
         } else if (e.data.startsWith("DONE")) {
-          // Optionally handle DONE events.
         } else if (e.data.startsWith("END")) {
           try {
             const endData = JSON.parse(e.data.replace("END ", ""));
@@ -425,7 +395,6 @@ $(document).ready(function() {
         }
       };
       eventSource.onerror = function(err) {
-        // If the EventSource is already closed, ignore the error.
         if (eventSource.readyState === EventSource.CLOSED) {
           console.log("SSE connection closed normally.");
           return;

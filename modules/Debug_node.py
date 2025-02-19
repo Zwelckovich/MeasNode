@@ -26,6 +26,6 @@ class Node(BaseNode):
         a = inputs.get("a", 0)
         b = inputs.get("b", 0)
         c = inputs.get("c", 0)
-        d = inputs.get("c", 0)
-        e = inputs.get("c", 0)
+        d = inputs.get("d", 0)  # Fixed: retrieve 'd'
+        e = inputs.get("e", 0)  # Fixed: retrieve 'e'
         return a ** b + c + d + e

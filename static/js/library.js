@@ -1,38 +1,22 @@
-// library.js
-
-// Get jQuery from the global scope.
 const $ = window.jQuery || window.$;
 if (!$) {
   console.error("jQuery is not loaded! Ensure that jQuery is included in your HTML before this module.");
 }
 
 export function initLibrary() {
-  // Create the library popup if it doesn't exist.
   if ($("#libraryPopup").length === 0) {
     $("body").append(`
-      <div id="libraryPopup" style="
-        position: fixed;
-        width: 200px;
-        height: 90%;
-        background-color: #555;
-        color: white;
-        overflow-y: auto;
-        padding: 10px;
-        box-sizing: border-box;
-        z-index: 1000;
-        display: none;">
-        <div id="closeLibraryPopup" style="text-align: right; cursor: pointer; margin-bottom: 10px;">X</div>
+      <div id="libraryPopup">
+        <div id="closeLibraryPopup">X</div>
         <div id="libraryItems"></div>
       </div>
     `);
   }
 
-  // Fetch node definitions from /api/nodes and build the library menu.
   $.getJSON("/api/nodes")
     .done(function(data) {
       if (Array.isArray(data) && data.length > 0) {
         console.log("Received node definitions:", data);
-        // Group nodes by category.
         let groups = {};
         data.forEach(function(def) {
           let cat = def.category || "Uncategorized";
@@ -40,11 +24,9 @@ export function initLibrary() {
             groups[cat] = [];
           }
           groups[cat].push(def);
-          // Store definitions globally.
           window.nodeDefinitions = window.nodeDefinitions || {};
           window.nodeDefinitions[def.title] = def;
         });
-        // Build the tree structure.
         for (let category in groups) {
           let $catHeader = $(`
             <div class="library-cat-header" style="background:#666; padding:5px; cursor:pointer; margin-top:5px;">
@@ -85,7 +67,6 @@ export function initLibrary() {
       console.error("Error loading node definitions:", textStatus, errorThrown);
     });
 
-  // Bind click events to show/hide the library popup.
   $("#libraryButton").on("click", function(){
      let sidebarOffset = $("#sidebar").offset();
      let sidebarWidth = $("#sidebar").outerWidth(true);

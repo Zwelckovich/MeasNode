@@ -8,13 +8,19 @@ window.nodes = window.nodes || {};
 export let nodeDefinitions = {};
 
 // Layout constants.
-const titleHeight = 30;          // Height for node title area.
-const anchorAreaTop = 35;        // Y-coordinate where anchors begin.
-const anchorSpacing = 20;        // Vertical spacing between anchors.
+// Helper to read CSS custom property numbers.
+function getCssVarNumber(varName, fallback) {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(varName)) || fallback;
+}
+const titleHeight = getCssVarNumber('--node-title-height', 30);
+const anchorAreaTop = getCssVarNumber('--anchor-area-top', 35);
+const anchorSpacing = getCssVarNumber('--anchor-spacing', 20);
 
-// Compute the field area height dynamically: 25px per field plus 10px padding.
+// Compute the field area height dynamically using CSS variables.
 function computeFieldAreaHeight(numFields) {
-  return numFields * 25 + 10;
+  const fieldLineHeight = getCssVarNumber('--field-line-height', 25);
+  const fieldPadding = getCssVarNumber('--field-padding', 10);
+  return numFields * fieldLineHeight + fieldPadding;
 }
 
 // Main function to create and add a node to the workflow.
