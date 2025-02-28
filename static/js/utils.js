@@ -97,5 +97,6 @@ export function getMouseWFCoordinates(ev) {
 export function computeFieldAreaHeight(numFields) {
   const fieldLineHeight = getCssVarNumber("field-line-height", 25);
   const fieldPadding = getCssVarNumber("field-padding", 10);
-  return numFields * fieldLineHeight + fieldPadding;
+  const bottomPadding = getCssVarNumber("node-bottom-padding", 15); // Additional bottom padding
+  return numFields * fieldLineHeight + fieldPadding + bottomPadding;
 }

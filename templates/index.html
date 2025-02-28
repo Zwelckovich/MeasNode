@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>MeasNode - Visual Programming Editor</title>
@@ -13,9 +14,11 @@
       --anchor-spacing: 20px;
       --field-line-height: 25px;
       --field-padding: 10px;
+      --node-bottom-padding: 15px;
+      /* Additional bottom padding for nodes */
       --min-zoom: 0.2;
       --max-zoom: 4.0;
-      
+
       /* Colors */
       --bg-color: #222;
       --node-bg-color: #444;
@@ -35,6 +38,18 @@
       --log-text-color: #0f0;
       --grid-line-color: #333;
       --grid-line-accent-color: #444;
+
+      /* Library tree menu colors */
+      --tree-bg-color: #333;
+      --tree-folder-color: #ddd;
+      --tree-folder-icon-color: #ffca28;
+      --tree-item-color: #bbb;
+      --tree-item-hover-color: #444;
+      --tree-item-hover-border: #666;
+      --tree-highlight-color: #ff9800;
+      --search-bg-color: #444;
+      --search-text-color: #fff;
+      --search-placeholder-color: #aaa;
     }
 
     /* Global reset and base styles */
@@ -43,7 +58,7 @@
       margin: 0;
       padding: 0;
     }
-    
+
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -53,7 +68,7 @@
       background-color: var(--bg-color);
       color: #fff;
     }
-    
+
     /* Sidebar (left menu bar) */
     #sidebar {
       width: 120px;
@@ -67,14 +82,14 @@
       flex-direction: column;
       justify-content: space-between;
     }
-    
+
     /* Container for sidebar buttons */
     #sidebarButtons {
       display: flex;
       flex-direction: column;
       align-items: center;
     }
-    
+
     /* Button styling */
     .sidebar-button {
       width: 100px;
@@ -86,32 +101,32 @@
       font-weight: bold;
       transition: background-color 0.2s, transform 0.1s;
     }
-    
+
     .sidebar-button:hover {
       opacity: 0.9;
       transform: translateY(-1px);
     }
-    
+
     .sidebar-button:active {
       transform: translateY(1px);
     }
-    
+
     #libraryButton {
       background-color: var(--btn-library-color);
       color: white;
     }
-    
+
     #startBtn {
       background: var(--btn-start-color);
       color: white;
     }
-    
+
     #logButton {
       background: var(--btn-log-color);
       color: #fff;
       font-size: 16px;
     }
-    
+
     /* Canvas area */
     #canvas {
       flex: 1;
@@ -120,7 +135,7 @@
       background-color: var(--bg-color);
       z-index: 0;
     }
-    
+
     /* Workflow container */
     #workflow {
       position: absolute;
@@ -132,14 +147,14 @@
       overflow: visible;
       z-index: 10;
       background-color: var(--bg-color);
-      background-image: 
+      background-image:
         linear-gradient(to right, var(--grid-line-color) 1px, transparent 1px),
         linear-gradient(to bottom, var(--grid-line-color) 1px, transparent 1px),
         linear-gradient(to right, var(--grid-line-accent-color) 1px, transparent 1px),
         linear-gradient(to bottom, var(--grid-line-accent-color) 1px, transparent 1px);
       background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
     }
-    
+
     /* SVG overlay for wiring */
     #svgOverlay {
       position: absolute;
@@ -150,7 +165,7 @@
       height: 100%;
       z-index: 200;
     }
-    
+
     /* Node styling */
     .node {
       position: absolute;
@@ -159,13 +174,13 @@
       border: 2px solid var(--node-border-color);
       border-radius: 5px;
       color: white;
-      padding: 10px 10px 10px 30px;
+      padding: 10px 10px var(--node-bottom-padding) 30px;
       cursor: move;
       user-select: none;
       z-index: 300;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
     }
-    
+
     .node-title {
       position: absolute;
       top: 0;
@@ -178,19 +193,19 @@
       border-bottom: 1px solid #555;
       background-color: rgba(0, 0, 0, 0.2);
     }
-    
+
     .node.selected {
       border-color: var(--node-selected-color);
     }
-    
+
     .node.processing {
       border-color: var(--node-processing-color) !important;
     }
-    
+
     .parameters {
       margin-top: 5px;
     }
-    
+
     .parameters input,
     .parameters select {
       width: 100%;
@@ -201,7 +216,7 @@
       background-color: #333;
       color: #fff;
     }
-    
+
     /* Anchor styling */
     .anchor {
       position: absolute;
@@ -211,76 +226,186 @@
       border: 2px solid var(--anchor-border-color);
       cursor: pointer;
     }
-    
+
     .anchor.input {
       background: var(--input-anchor-color);
       left: -8px;
     }
-    
+
     .anchor.output {
       background: var(--output-anchor-color);
       right: -8px;
     }
-    
+
     .anchor.selected {
       border-color: var(--anchor-selected-color);
       border-width: 3px;
     }
-    
+
     .anchor-label {
       position: absolute;
       font-size: 10px;
       color: #fff;
       pointer-events: none;
     }
-    
+
     .left-label {
       left: 12px;
     }
-    
+
     .right-label {
       right: 12px;
     }
-    
-    /* Library Popup styling */
+
+    /* Library Popup with Tree Menu styling */
     #libraryPopup {
       position: fixed;
-      width: 200px;
+      width: 250px;
       height: 90%;
-      background-color: #444;
+      background-color: var(--tree-bg-color);
       color: white;
-      overflow-y: auto;
-      padding: 10px;
-      box-sizing: border-box;
-      z-index: 1000;
+      overflow: hidden;
       display: none;
       border-radius: 4px;
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
     
+    /* Apply flex layout when library is visible */
+    #libraryPopup.visible {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #library-header {
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      border-bottom: 1px solid #555;
+    }
+
     #closeLibraryPopup {
       text-align: right;
       cursor: pointer;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+      font-size: 16px;
       font-weight: bold;
     }
-    
-    .library-cat-header {
-      background: #555;
-      padding: 5px;
+
+    #searchContainer {
+      position: relative;
+      margin-bottom: 5px;
+    }
+
+    #nodeSearch {
+      width: 100%;
+      padding: 6px 28px 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background-color: var(--search-bg-color);
+      color: var(--search-text-color);
+      font-size: 13px;
+    }
+
+    #nodeSearch::placeholder {
+      color: var(--search-placeholder-color);
+    }
+
+    #clearSearch {
+      position: absolute;
+      right: 0;
+      top: 0;
+      height: 100%;
+      width: 28px;
+      background: transparent;
+      border: none;
+      color: #999;
+      font-size: 14px;
       cursor: pointer;
-      margin-top: 5px;
-      border-radius: 3px;
     }
-    
-    .library-item {
-      background: #666;
-      margin: 3px 0;
+
+    #clearSearch:hover {
+      color: #fff;
+    }
+
+    #libraryTree {
+      flex: 1;
+      overflow-y: auto;
       padding: 5px;
-      cursor: move;
-      border-radius: 2px;
     }
-    
+
+    /* Tree structure styling */
+    .tree-category {
+      margin-bottom: 1px;
+      font-size: 13px;
+    }
+
+    .tree-folder {
+      display: flex;
+      align-items: center;
+      padding: 3px 5px;
+      cursor: pointer;
+      border-radius: 3px;
+      color: var(--tree-folder-color);
+    }
+
+    .tree-folder:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .tree-toggle {
+      display: inline-block;
+      width: 14px;
+      text-align: center;
+      margin-right: 2px;
+      font-size: 10px;
+    }
+
+    .tree-folder-icon {
+      margin-right: 5px;
+    }
+
+    .tree-folder-name {
+      font-weight: bold;
+    }
+
+    .tree-items {
+      padding-left: 24px;
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      padding: 2px 5px;
+      margin: 1px 0;
+      cursor: grab;
+      border-radius: 3px;
+      border: 1px solid transparent;
+      color: var(--tree-item-color);
+      font-size: 12px;
+    }
+
+    .tree-item:hover {
+      background-color: var(--tree-item-hover-color);
+      border-color: var(--tree-item-hover-border);
+    }
+
+    .tree-node-icon {
+      margin-right: 5px;
+      font-size: 12px;
+    }
+
+    .highlight {
+      color: var(--tree-highlight-color);
+      font-weight: bold;
+    }
+
+    .no-results {
+      padding: 10px;
+      text-align: center;
+      color: #888;
+      font-style: italic;
+    }
+
     /* Context Menu styling */
     .context-menu {
       position: fixed;
@@ -292,20 +417,20 @@
       border-radius: 3px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     }
-    
+
     .context-menu ul {
       list-style: none;
     }
-    
+
     .context-menu li {
       cursor: pointer;
       padding: 5px 15px;
     }
-    
+
     .context-menu li:hover {
       background-color: #444;
     }
-    
+
     /* Log Window styling */
     #logWindow {
       position: fixed;
@@ -323,7 +448,7 @@
       display: none;
       border-top: 2px solid #555;
     }
-    
+
     #closeLogWindow {
       position: absolute;
       top: 5px;
@@ -332,7 +457,7 @@
       color: #f00;
       font-weight: bold;
     }
-    
+
     /* Lasso selection */
     #lasso-selection {
       position: absolute;
@@ -342,6 +467,7 @@
     }
   </style>
 </head>
+
 <body>
   <!-- Sidebar with Library, Start, and Log buttons -->
   <div id="sidebar">
@@ -351,7 +477,7 @@
     </div>
     <button id="logButton" class="sidebar-button" title="Show Log">&#128221;</button>
   </div>
-  
+
   <!-- Canvas for node editor -->
   <div id="canvas">
     <!-- Workflow container holds nodes and wires and is panned/zoomed -->
@@ -359,15 +485,16 @@
       <svg id="svgOverlay"></svg>
     </div>
   </div>
-  
+
   <!-- Log Window -->
   <div id="logWindow">
     <span id="closeLogWindow">&#10006;</span>
     <div id="logContent"></div>
   </div>
-  
+
   <!-- Load jQuery first, then load the main JavaScript as an ES6 module -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
+
 </html>
