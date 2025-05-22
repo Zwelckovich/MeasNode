@@ -16,6 +16,7 @@ pending_workflows = {}
 # --- Set up a global log queue and custom logging handler ---
 log_queue = queue.Queue()
 
+
 class QueueHandler(logging.Handler):
     def emit(self, record):
         try:
@@ -24,12 +25,14 @@ class QueueHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+
 # Set up the logging system
 queue_handler = QueueHandler()
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 queue_handler.setFormatter(formatter)
 logging.getLogger().addHandler(queue_handler)
 logging.getLogger().setLevel(logging.INFO)
+
 
 # ---------------- Base Node Class ------------------
 class BaseNode:
@@ -37,10 +40,11 @@ class BaseNode:
     Base class for all nodes.
     Each node module should subclass this.
     """
+
     title = "Base Node"
     category = "Uncategorized"  # New attribute for categorization.
-    inputs = []      # Example: [{"name": "input1", "type": "int"}]
-    outputs = []     # Example: [{"name": "output", "type": "int"}]
+    inputs = []  # Example: [{"name": "input1", "type": "int"}]
+    outputs = []  # Example: [{"name": "output", "type": "int"}]
     parameters_def = []  # Example: [{"name": "value", "type": "int", "default": 42}]
 
     def __init__(self, node_id):
@@ -48,9 +52,6 @@ class BaseNode:
         self.parameters = {}
         self.input_connections = {}  # To be filled as { input_name: (source_node, "output") }
 
-    def execute(self, **inputs):
-        """Override this method in subclasses to implement node logic."""
-        return None
 
 # ---------------- Node Modules Loader ------------------
 def load_node_modules():
@@ -81,6 +82,7 @@ def load_node_modules():
                 node_classes[cls.title] = cls
     return node_classes
 
+
 # ---------------- API Endpoint: /api/nodes ------------------
 @app.route("/api/nodes", methods=["GET"])
 def api_nodes():
@@ -96,14 +98,17 @@ def api_nodes():
     node_classes = load_node_modules()
     definitions = []
     for title, cls in node_classes.items():
-        definitions.append({
-            "title": title,
-            "category": getattr(cls, "category", "Uncategorized"),
-            "parameters": getattr(cls, "parameters_def", []),
-            "inputs": getattr(cls, "inputs", []),
-            "outputs": getattr(cls, "outputs", [])
-        })
+        definitions.append(
+            {
+                "title": title,
+                "category": getattr(cls, "category", "Uncategorized"),
+                "parameters": getattr(cls, "parameters_def", []),
+                "inputs": getattr(cls, "inputs", []),
+                "outputs": getattr(cls, "outputs", []),
+            }
+        )
     return jsonify(definitions)
+
 
 # ---------------- API Endpoint: /api/execute (POST) ------------------
 @app.route("/api/execute", methods=["POST"])
@@ -115,14 +120,14 @@ def api_execute():
       - type: the node title (to look up the corresponding Python class)
       - parameters: parameter values (as entered by the user)
       - connections: a mapping of input names to the source node IDs.
-    
+
     This endpoint instantiates the nodes, sets up connections, recursively evaluates the nodes,
     and returns a unique token.
     The processing will be streamed via SSE at the /api/execute_stream endpoint.
     """
     workflow = request.json
     token = str(uuid.uuid4())
-    
+
     def generate_progress():
         nodes = {}
         node_classes = load_node_modules()
@@ -143,41 +148,85 @@ def api_execute():
             for input_name, source_node_id in node_data.get("connections", {}).items():
                 if source_node_id in nodes:
                     source_node = nodes[source_node_id]
-                    node_instance.input_connections[input_name] = (source_node, "output")
+                    node_instance.input_connections[input_name] = (
+                        source_node,
+                        "output",
+                    )
 
         processing_order = []
         results = {}
+        evaluated_nodes = {}  # Cache for memoization
 
-        def evaluate_node(node):
+        def evaluate_node(node, evaluated=None):
+            """
+            Recursively evaluates a node and its inputs using memoization to avoid redundant calculations.
+
+            Args:
+                node: The node to evaluate
+                evaluated: Dictionary of already evaluated nodes {node_id: result}
+
+            Returns:
+                The result of the node's execution
+            """
+            # Initialize memoization dictionary if not provided
+            if evaluated is None:
+                evaluated = {}
+
+            # If this node has already been evaluated, return the cached result
+            if node.node_id in evaluated:
+                return evaluated[node.node_id]
+
+            # Prepare inputs by evaluating input connections
             inputs = {}
             for inp in node.inputs:
                 name = inp["name"]
                 if name in node.input_connections:
                     source_node, _ = node.input_connections[name]
-                    value = yield from evaluate_node(source_node)
+                    # Recursively evaluate the source node, passing the evaluation cache
+                    value = yield from evaluate_node(source_node, evaluated)
                     inputs[name] = value
                 else:
+                    # Default value if no connection
                     inputs[name] = 0
+
+            # Signal that we're processing this node
             yield f"data: PROCESSING {node.node_id}\n\n"
+
+            # Execute the node's logic
             result = node.execute(**inputs)
-            results[node.node_id] = result
+
+            # Cache the result
+            evaluated[node.node_id] = result
+
+            # Add node to processing order
             processing_order.append(node.node_id)
+
+            # Signal that node processing is complete
             yield f"data: DONE {node.node_id}\n\n"
+
             return result
 
-        for node in nodes.values():
-            if node.title == "Result Node":
-                gen = evaluate_node(node)
-                try:
-                    for event in gen:
-                        yield event
-                except StopIteration as e:
-                    results[node.node_id] = e.value
+        # Find all result nodes
+        result_nodes = [node for node in nodes.values() if node.title == "Result Node"]
+
+        # Process each result node
+        for node in result_nodes:
+            gen = evaluate_node(node, evaluated_nodes)
+            try:
+                for event in gen:
+                    yield event
+            except StopIteration as e:
+                results[node.node_id] = e.value
+
+        # Include results for all evaluated nodes
+        for node_id, result in evaluated_nodes.items():
+            results[node_id] = result
 
         yield f"data: END {json.dumps({'order': processing_order, 'results': results})}\n\n"
 
     pending_workflows[token] = generate_progress()
     return jsonify({"token": token})
+
 
 # ---------------- API Endpoint: /api/execute_stream (GET) ------------------
 @app.route("/api/execute_stream", methods=["GET"])
@@ -185,6 +234,7 @@ def api_execute_stream():
     token = request.args.get("token")
     if not token or token not in pending_workflows:
         return "Invalid token", 400
+
     def stream():
         gen = pending_workflows[token]
         try:
@@ -196,6 +246,7 @@ def api_execute_stream():
             yield f"data: END {json.dumps({'order': [], 'results': {}, 'error': str(e)})}\n\n"
         finally:
             del pending_workflows[token]
+
     return Response(stream(), mimetype="text/event-stream")
 
 
@@ -207,6 +258,7 @@ def stream_logs():
     When no log message is available or the message is empty, a comment line is sent
     so that no visible log line is added to the log window.
     """
+
     def generate_logs():
         while True:
             try:
@@ -221,15 +273,17 @@ def stream_logs():
             except queue.Empty:
                 # When timeout occurs, send a keepalive comment.
                 yield ": keepalive\n\n"
-    return Response(generate_logs(), mimetype='text/event-stream')
+
+    return Response(generate_logs(), mimetype="text/event-stream")
 
 
 # ---------------- Main Page Route ------------------
 @app.route("/")
 def index():
-    mimetypes.add_type('application/javascript', '.js')
-    mimetypes.add_type('text/css', '.css')
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("text/css", ".css")
     return render_template("index.html")
+
 
 # ---------------- Main Entry Point ------------------
 if __name__ == "__main__":
