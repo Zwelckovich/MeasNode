@@ -1,20 +1,19 @@
 from app import BaseNode
+import logging
 import time
+
 
 class Node(BaseNode):
     title = "BasicMath Node"
-    category = "Math"         # New category attribute
-    inputs = [
-        {"name": "a", "type": "int"},
-        {"name": "b", "type": "int"}
-    ]
+    category = "Math"  # New category attribute
+    inputs = [{"name": "a", "type": "int"}, {"name": "b", "type": "int"}]
     outputs = [{"name": "output", "type": "int"}]
     parameters_def = [
         {
             "name": "operation",
             "type": "dropdown",
             "options": ["add", "subtract", "multiply", "divide"],
-            "default": "add"
+            "default": "add",
         }
     ]
 
@@ -23,6 +22,9 @@ class Node(BaseNode):
         self.parameters["operation"] = "add"
 
     def execute(self, **inputs):
+        logging.info(
+            f"BasicMath Node {self.node_id} executing with values {inputs.get('a', 0)} and {inputs.get('b', 0)}"
+        )
         a = inputs.get("a", 0)
         b = inputs.get("b", 0)
         op = self.parameters.get("operation", "add")
