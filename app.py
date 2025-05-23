@@ -6,6 +6,7 @@ import json
 import time
 import logging
 import queue
+import shutil
 from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request
 
@@ -188,6 +189,123 @@ def api_create_project():
         return jsonify({"error": "Failed to create project"}), 500
 
 
+# ---------------- API Endpoint: /api/projects/duplicate (POST) ------------------
+@app.route("/api/projects/duplicate", methods=["POST"])
+def api_duplicate_project():
+    """
+    Duplicates an entire project with all its workflows.
+    Expects JSON payload with:
+      - sourceProject: source project name
+      - targetProject: target project name
+    """
+    try:
+        data = request.json
+        source_project = data.get("sourceProject", "").strip()
+        target_project = data.get("targetProject", "").strip()
+
+        if not source_project or not target_project:
+            return jsonify({"error": "Source and target project names are required"}), 400
+
+        projects_dir = Path("projects")
+        source_path = projects_dir / source_project
+        target_path = projects_dir / target_project
+
+        # Check if source project exists
+        if not source_path.exists():
+            return jsonify({"error": "Source project does not exist"}), 404
+
+        # Check if target project already exists
+        if target_path.exists():
+            return jsonify({"error": "Target project already exists"}), 409
+
+        # Copy the entire project directory
+        shutil.copytree(source_path, target_path)
+
+        logging.info(f"Duplicated project: {source_project} to {target_project}")
+        return jsonify({"message": "Project duplicated successfully"})
+
+    except Exception as e:
+        logging.error(f"Error duplicating project: {e}")
+        return jsonify({"error": "Failed to duplicate project"}), 500
+
+
+# ---------------- API Endpoint: /api/projects/delete (DELETE) ------------------
+@app.route("/api/projects/delete", methods=["DELETE"])
+def api_delete_project():
+    """
+    Deletes an entire project and all its workflows.
+    Expects JSON payload with:
+      - project: project name to delete
+    """
+    try:
+        data = request.json
+        project_name = data.get("project", "").strip()
+
+        if not project_name:
+            return jsonify({"error": "Project name is required"}), 400
+
+        projects_dir = Path("projects")
+        project_path = projects_dir / project_name
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Delete the entire project directory
+        shutil.rmtree(project_path)
+
+        logging.info(f"Deleted project: {project_name}")
+        return jsonify({"message": "Project deleted successfully"})
+
+    except Exception as e:
+        logging.error(f"Error deleting project: {e}")
+        return jsonify({"error": "Failed to delete project"}), 500
+
+
+# ---------------- API Endpoint: /api/projects/rename (PUT) ------------------
+@app.route("/api/projects/rename", methods=["PUT"])
+def api_rename_project():
+    """
+    Renames a project.
+    Expects JSON payload with:
+      - oldName: current project name
+      - newName: new project name
+    """
+    try:
+        data = request.json
+        old_name = data.get("oldName", "").strip()
+        new_name = data.get("newName", "").strip()
+
+        if not old_name or not new_name:
+            return jsonify({"error": "Old and new project names are required"}), 400
+
+        # Validate new project name
+        if not new_name.replace("_", "").replace("-", "").replace(" ", "").isalnum():
+            return jsonify({"error": "Invalid project name"}), 400
+
+        projects_dir = Path("projects")
+        old_path = projects_dir / old_name
+        new_path = projects_dir / new_name
+
+        # Check if source project exists
+        if not old_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Check if target project already exists
+        if new_path.exists():
+            return jsonify({"error": "A project with the new name already exists"}), 409
+
+        # Rename the project directory
+        old_path.rename(new_path)
+
+        logging.info(f"Renamed project: {old_name} to {new_name}")
+        return jsonify({"message": "Project renamed successfully"})
+
+    except Exception as e:
+        logging.error(f"Error renaming project: {e}")
+        return jsonify({"error": "Failed to rename project"}), 500
+
+
 # ---------------- API Endpoint: /api/workflows (POST) ------------------
 @app.route("/api/workflows", methods=["POST"])
 def api_create_workflow():
@@ -237,6 +355,159 @@ def api_create_workflow():
     except Exception as e:
         logging.error(f"Error creating workflow: {e}")
         return jsonify({"error": "Failed to create workflow"}), 500
+
+
+# ---------------- API Endpoint: /api/workflows/duplicate (POST) ------------------
+@app.route("/api/workflows/duplicate", methods=["POST"])
+def api_duplicate_workflow():
+    """
+    Duplicates a workflow within a project.
+    Expects JSON payload with:
+      - project: project name
+      - sourceWorkflow: source workflow filename
+      - targetWorkflow: target workflow filename
+    """
+    try:
+        data = request.json
+        project_name = data.get("project", "").strip()
+        source_workflow = data.get("sourceWorkflow", "").strip()
+        target_workflow = data.get("targetWorkflow", "").strip()
+
+        if not project_name or not source_workflow or not target_workflow:
+            return jsonify({"error": "Project name and workflow names are required"}), 400
+
+        projects_dir = Path("projects")
+        project_path = projects_dir / project_name
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Add .json extension if not present
+        if not source_workflow.endswith(".json"):
+            source_workflow += ".json"
+        if not target_workflow.endswith(".json"):
+            target_workflow += ".json"
+
+        source_path = project_path / source_workflow
+        target_path = project_path / target_workflow
+
+        # Check if source workflow exists
+        if not source_path.exists():
+            return jsonify({"error": "Source workflow does not exist"}), 404
+
+        # Check if target workflow already exists
+        if target_path.exists():
+            return jsonify({"error": "Target workflow already exists"}), 409
+
+        # Copy the workflow file
+        shutil.copy2(source_path, target_path)
+
+        logging.info(f"Duplicated workflow: {source_workflow} to {target_workflow}")
+        return jsonify({"message": "Workflow duplicated successfully"})
+
+    except Exception as e:
+        logging.error(f"Error duplicating workflow: {e}")
+        return jsonify({"error": "Failed to duplicate workflow"}), 500
+
+
+# ---------------- API Endpoint: /api/workflows/delete (DELETE) ------------------
+@app.route("/api/workflows/delete", methods=["DELETE"])
+def api_delete_workflow():
+    """
+    Deletes a workflow.
+    Expects JSON payload with:
+      - project: project name
+      - workflow: workflow filename
+    """
+    try:
+        data = request.json
+        project_name = data.get("project", "").strip()
+        workflow_name = data.get("workflow", "").strip()
+
+        if not project_name or not workflow_name:
+            return jsonify({"error": "Project and workflow names are required"}), 400
+
+        projects_dir = Path("projects")
+        project_path = projects_dir / project_name
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Add .json extension if not present
+        if not workflow_name.endswith(".json"):
+            workflow_name += ".json"
+
+        workflow_path = project_path / workflow_name
+
+        # Check if workflow exists
+        if not workflow_path.exists():
+            return jsonify({"error": "Workflow does not exist"}), 404
+
+        # Delete the workflow file
+        workflow_path.unlink()
+
+        logging.info(f"Deleted workflow: {workflow_name} from project: {project_name}")
+        return jsonify({"message": "Workflow deleted successfully"})
+
+    except Exception as e:
+        logging.error(f"Error deleting workflow: {e}")
+        return jsonify({"error": "Failed to delete workflow"}), 500
+
+
+# ---------------- API Endpoint: /api/workflows/rename (PUT) ------------------
+@app.route("/api/workflows/rename", methods=["PUT"])
+def api_rename_workflow():
+    """
+    Renames a workflow.
+    Expects JSON payload with:
+      - project: project name
+      - oldName: current workflow filename
+      - newName: new workflow filename
+    """
+    try:
+        data = request.json
+        project_name = data.get("project", "").strip()
+        old_name = data.get("oldName", "").strip()
+        new_name = data.get("newName", "").strip()
+
+        if not project_name or not old_name or not new_name:
+            return jsonify({"error": "Project name and workflow names are required"}), 400
+
+        projects_dir = Path("projects")
+        project_path = projects_dir / project_name
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Add .json extension if not present
+        if not old_name.endswith(".json"):
+            old_name += ".json"
+        if not new_name.endswith(".json"):
+            new_name += ".json"
+
+        old_path = project_path / old_name
+        new_path = project_path / new_name
+
+        # Check if source workflow exists
+        if not old_path.exists():
+            return jsonify({"error": "Workflow does not exist"}), 404
+
+        # Check if target workflow already exists
+        if new_path.exists():
+            return jsonify({"error": "A workflow with the new name already exists"}), 409
+
+        # Rename the workflow file
+        old_path.rename(new_path)
+
+        logging.info(f"Renamed workflow: {old_name} to {new_name}")
+        return jsonify({"message": "Workflow renamed successfully"})
+
+    except Exception as e:
+        logging.error(f"Error renaming workflow: {e}")
+        return jsonify({"error": "Failed to rename workflow"}), 500
 
 
 # ---------------- API Endpoint: /api/workflows/save (POST) ------------------

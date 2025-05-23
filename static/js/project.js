@@ -28,6 +28,9 @@ export function initProject() {
   $("#newWorkflowBtn").on("click", createNewWorkflow);
   $("#saveWorkflowBtn").on("click", saveCurrentWorkflow);
   $("#loadWorkflowBtn").on("click", loadSelectedWorkflow);
+  $("#duplicateBtn").on("click", duplicateItem);
+  $("#deleteBtn").on("click", deleteItem);
+  $("#renameBtn").on("click", renameItem);
 
   // Project search functionality
   $("#projectSearch").on("input", filterProjects);
@@ -52,6 +55,9 @@ function createProjectPopup() {
             <button id="newWorkflowBtn" class="project-btn disabled" title="Create New Workflow">New Workflow</button>
             <button id="saveWorkflowBtn" class="project-btn disabled" title="Save Current Workflow">Save</button>
             <button id="loadWorkflowBtn" class="project-btn disabled" title="Load Selected Workflow">Load</button>
+            <button id="duplicateBtn" class="project-btn disabled" title="Duplicate Project or Workflow">Duplicate</button>
+            <button id="deleteBtn" class="project-btn disabled" title="Delete Project or Workflow">Delete</button>
+            <button id="renameBtn" class="project-btn disabled" title="Rename Project or Workflow">Rename</button>
           </div>
           <div id="searchContainer">
             <input type="text" id="projectSearch" placeholder="Search projects...">
@@ -243,6 +249,15 @@ function updateButtonStates() {
 
   // Load button - enabled if workflow is selected
   $("#loadWorkflowBtn").toggleClass("disabled", !hasWorkflow);
+
+  // Duplicate button - enabled if project or workflow is selected
+  $("#duplicateBtn").toggleClass("disabled", !hasProject);
+
+  // Delete button - enabled if project or workflow is selected
+  $("#deleteBtn").toggleClass("disabled", !hasProject);
+
+  // Rename button - enabled if project or workflow is selected
+  $("#renameBtn").toggleClass("disabled", !hasProject);
 }
 
 /**
@@ -696,6 +711,215 @@ function filterProjects() {
 function clearProjectSearch() {
   $("#projectSearch").val("").trigger("input");
   $("#projectSearch").focus();
+}
+
+/**
+ * Duplicates the selected project or workflow
+ */
+async function duplicateItem() {
+  if (!currentProject) {
+    alert("Please select a project or workflow first");
+    return;
+  }
+
+  try {
+    if (currentWorkflow) {
+      // Duplicate workflow
+      const baseName = currentWorkflow.replace('.json', '');
+      const newName = baseName + '_clone';
+
+      const response = await fetch("/api/workflows/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: currentProject,
+          sourceWorkflow: currentWorkflow,
+          targetWorkflow: newName + '.json'
+        })
+      });
+
+      if (response.ok) {
+        await loadProjects();
+        restoreSelectionState();
+        console.log("Duplicated workflow:", currentWorkflow, "to", newName + '.json');
+      } else {
+        const errorData = await response.json();
+        alert("Error duplicating workflow: " + (errorData.error || "Unknown error"));
+      }
+    } else {
+      // Duplicate project
+      const newProjectName = currentProject + '_clone';
+
+      const response = await fetch("/api/projects/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceProject: currentProject,
+          targetProject: newProjectName
+        })
+      });
+
+      if (response.ok) {
+        await loadProjects();
+        restoreSelectionState();
+        console.log("Duplicated project:", currentProject, "to", newProjectName);
+      } else {
+        const errorData = await response.json();
+        alert("Error duplicating project: " + (errorData.error || "Unknown error"));
+      }
+    }
+  } catch (error) {
+    console.error("Error duplicating item:", error);
+    alert("Error duplicating item");
+  }
+}
+
+/**
+ * Deletes the selected project or workflow with confirmation
+ */
+async function deleteItem() {
+  if (!currentProject) {
+    alert("Please select a project or workflow first");
+    return;
+  }
+
+  let confirmMessage;
+  let deleteUrl;
+  let deleteData;
+
+  if (currentWorkflow) {
+    // Delete workflow
+    confirmMessage = `⚠️ WARNING: Are you sure you want to delete the workflow "${currentWorkflow.replace('.json', '')}"?\n\nThis action cannot be undone!`;
+    deleteUrl = "/api/workflows/delete";
+    deleteData = {
+      project: currentProject,
+      workflow: currentWorkflow
+    };
+  } else {
+    // Delete project
+    confirmMessage = `⚠️ DANGER: Are you sure you want to delete the entire project "${currentProject}" and ALL its workflows?\n\nThis will permanently delete:\n- The project folder\n- All workflow files inside it\n\nThis action cannot be undone!`;
+    deleteUrl = "/api/projects/delete";
+    deleteData = {
+      project: currentProject
+    };
+  }
+
+  if (!confirm(confirmMessage)) {
+    return;
+  }
+
+  // Double confirmation for project deletion
+  if (!currentWorkflow) {
+    if (!confirm(`This is your final warning!\n\nYou are about to permanently delete the project "${currentProject}" and ALL its content.\n\nType "DELETE" in the next prompt to confirm.`)) {
+      return;
+    }
+
+    const confirmation = prompt('Type "DELETE" to confirm the deletion:');
+    if (confirmation !== "DELETE") {
+      alert("Deletion cancelled - confirmation text did not match.");
+      return;
+    }
+  }
+
+  try {
+    const response = await fetch(deleteUrl, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(deleteData)
+    });
+
+    if (response.ok) {
+      // Clear selection if we deleted the current item
+      if (!currentWorkflow) {
+        // Deleted entire project
+        currentProject = null;
+        currentWorkflow = null;
+      } else {
+        // Deleted workflow, keep project selected
+        currentWorkflow = null;
+      }
+
+      await loadProjects();
+      restoreSelectionState();
+      console.log("Deleted successfully");
+    } else {
+      const errorData = await response.json();
+      alert("Error deleting: " + (errorData.error || "Unknown error"));
+    }
+  } catch (error) {
+    console.error("Error deleting item:", error);
+    alert("Error deleting item");
+  }
+}
+
+/**
+ * Renames the selected project or workflow
+ */
+async function renameItem() {
+  if (!currentProject) {
+    alert("Please select a project or workflow first");
+    return;
+  }
+
+  let currentName, newName, renameUrl, renameData;
+
+  if (currentWorkflow) {
+    // Rename workflow
+    currentName = currentWorkflow.replace('.json', '');
+    newName = prompt(`Enter new name for workflow "${currentName}":`, currentName);
+
+    if (!newName || newName.trim() === "" || newName.trim() === currentName) {
+      return;
+    }
+
+    renameUrl = "/api/workflows/rename";
+    renameData = {
+      project: currentProject,
+      oldName: currentWorkflow,
+      newName: newName.trim() + '.json'
+    };
+  } else {
+    // Rename project
+    currentName = currentProject;
+    newName = prompt(`Enter new name for project "${currentName}":`, currentName);
+
+    if (!newName || newName.trim() === "" || newName.trim() === currentName) {
+      return;
+    }
+
+    renameUrl = "/api/projects/rename";
+    renameData = {
+      oldName: currentProject,
+      newName: newName.trim()
+    };
+  }
+
+  try {
+    const response = await fetch(renameUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(renameData)
+    });
+
+    if (response.ok) {
+      // Update current selection to the new name
+      if (currentWorkflow) {
+        currentWorkflow = newName.trim() + '.json';
+      } else {
+        currentProject = newName.trim();
+      }
+
+      await loadProjects();
+      restoreSelectionState();
+      console.log("Renamed successfully");
+    } else {
+      const errorData = await response.json();
+      alert("Error renaming: " + (errorData.error || "Unknown error"));
+    }
+  } catch (error) {
+    console.error("Error renaming item:", error);
+    alert("Error renaming item");
+  }
 }
 
 // Export functions for use in other modules
