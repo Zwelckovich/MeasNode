@@ -1,0 +1,68 @@
+{
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "Integer Node",
+      "position": {
+        "x": 330,
+        "y": 169
+      },
+      "parameters": {
+        "value": "42"
+      }
+    },
+    {
+      "id": "node_2",
+      "type": "Integer Node",
+      "position": {
+        "x": 339,
+        "y": 352
+      },
+      "parameters": {
+        "value": "42"
+      }
+    },
+    {
+      "id": "node_3",
+      "type": "BasicMath Node",
+      "position": {
+        "x": 702,
+        "y": 247
+      },
+      "parameters": {
+        "operation": "add"
+      }
+    },
+    {
+      "id": "node_4",
+      "type": "Result Node",
+      "position": {
+        "x": 1138,
+        "y": 288
+      },
+      "parameters": {
+        "result": "0"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "fromNode": "node_1",
+      "fromAnchor": "output",
+      "toNode": "node_3",
+      "toAnchor": "a"
+    },
+    {
+      "fromNode": "node_2",
+      "fromAnchor": "output",
+      "toNode": "node_3",
+      "toAnchor": "b"
+    },
+    {
+      "fromNode": "node_3",
+      "fromAnchor": "output",
+      "toNode": "node_4",
+      "toAnchor": "input"
+    }
+  ]
+}

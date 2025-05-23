@@ -3,12 +3,18 @@ import { addNode, nodeDefinitions, updateWiresForNode } from "./node.js";
 import { initWiring } from "./wiring.js";
 import { makeDraggable } from "./dragdrop.js";
 import { showContextMenu, showAnchorContextMenu, removeContextMenu } from "./contextMenu.js";
-import { updateWirePath, getCssVarNumber, getMouseWFCoordinates, clientToLogical } from "./utils.js";
+import { updateWirePath, getCssVarNumber, getMouseWFCoordinates, clientToLogical, getAnchorCenter } from "./utils.js";
+import { initProject, hasUnsavedChanges } from "./project.js";
 
 // Expose context menu functions globally
 window.showContextMenu = showContextMenu;
 window.showAnchorContextMenu = showAnchorContextMenu;
 window.removeContextMenu = removeContextMenu;
+
+// Expose functions globally for project system
+window.addNode = addNode;
+window.getAnchorCenter = getAnchorCenter;
+window.updateWirePath = updateWirePath;
 
 // Global variables for nodes, wiring, and node definitions
 window.nodeCounter = 0;
@@ -57,7 +63,7 @@ function logDeletionUndoStack(action) {
  */
 function getWorkflowState() {
   let state = { nodes: [], wires: [] };
-  
+
   // Capture all nodes with their positions and parameters
   $(".node").each(function() {
     let $node = $(this);
@@ -79,7 +85,7 @@ function getWorkflowState() {
       })()
     });
   });
-  
+
   // Capture all wire connections
   state.wires = window.wires.map(w => ({
     fromNode: w.fromNode,
@@ -87,7 +93,7 @@ function getWorkflowState() {
     toNode: w.toNode,
     toAnchor: w.toAnchor
   }));
-  
+
   return state;
 }
 
@@ -99,10 +105,10 @@ function restoreWorkflowState(state) {
   // Clear existing workflow
   $("#workflow").empty();
   $("#workflow").append('<svg id="svgOverlay"></svg>');
-  
+
   window.wires = [];
   window.nodes = {};
-  
+
   // Recreate nodes
   state.nodes.forEach(n => {
     let $node = addNode(n.type, n.left, n.top);
@@ -116,12 +122,12 @@ function restoreWorkflowState(state) {
     $node.attr("data-id", n.id);
     window.nodes[n.id] = $node;
   });
-  
+
   // Recreate wires
   state.wires.forEach(wireData => {
     createWireFromData(wireData);
   });
-  
+
   updateWorkflowTransform();
 }
 
@@ -143,21 +149,21 @@ function createWireFromData(wireData) {
   let $fromNode = window.nodes[wireData.fromNode];
   let $toNode = window.nodes[wireData.toNode];
   if (!$fromNode || !$toNode) return;
-  
+
   let $fromAnchor = $fromNode.find(`.anchor.output[data-anchor="${wireData.fromAnchor}"]`);
   let $toAnchor = $toNode.find(`.anchor.input[data-anchor="${wireData.toAnchor}"]`);
   if (!$fromAnchor.length || !$toAnchor.length) return;
-  
+
   let newLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
   newLine.setAttribute("stroke", "#fff");
   newLine.setAttribute("stroke-width", "2");
   newLine.setAttribute("fill", "none");
   document.getElementById("svgOverlay").appendChild(newLine);
-  
+
   let startPos = getAnchorCenter($fromAnchor);
   let endPos = getAnchorCenter($toAnchor);
   newLine.setAttribute("d", updateWirePath(startPos.x, startPos.y, endPos.x, endPos.y));
-  
+
   window.wires.push({
     fromNode: wireData.fromNode,
     fromAnchor: wireData.fromAnchor,
@@ -181,7 +187,7 @@ $(document).on("keydown", function(ev) {
       logDeletionUndoStack("UNDO");
     }
     ev.preventDefault();
-  } 
+  }
   // Redo with Ctrl+Y
   else if (ev.ctrlKey && (ev.key === "y" || ev.key === "Y")) {
     if (deletionRedoStack.length > 0) {
@@ -205,7 +211,7 @@ $(document).ready(function() {
         if (e.data.startsWith(":")) return;
         $("#logContent").append(e.data + "<br>");
         $("#logWindow").scrollTop($("#logWindow")[0].scrollHeight);
-      };      
+      };
       logSource.onerror = function(err) {
         console.error("Log SSE error:", err);
         logSource.close();
@@ -230,12 +236,13 @@ $(document).ready(function() {
   // Initialize the application components
   initLibrary();
   initWiring();
+  initProject();
 
   // Handle drag-and-drop for creating new nodes
   $("#canvas").on("dragover", function(ev) {
     ev.preventDefault();
   });
-  
+
   $("#canvas").on("drop", function(ev) {
     ev.preventDefault();
     let type = ev.originalEvent.dataTransfer.getData("text/plain");
@@ -262,11 +269,11 @@ $(document).ready(function() {
         height: 0,
         zIndex: 5000
       });
-      
+
       $("body").append($lasso);
       let startX = ev.pageX;
       let startY = ev.pageY;
-      
+
       $(document).on("mousemove.lasso", function(ev2) {
         let currX = ev2.pageX;
         let currY = ev2.pageY;
@@ -276,19 +283,19 @@ $(document).ready(function() {
         let height = Math.abs(currY - startY);
         $lasso.css({ left, top, width, height });
       });
-      
+
       $(document).on("mouseup.lasso", function() {
         let lassoOffset = $lasso.offset();
         let lassoWidth = $lasso.outerWidth();
         let lassoHeight = $lasso.outerHeight();
-        
+
         if (lassoWidth > 0 && lassoHeight > 0) {
           $(".node").each(function() {
             let $node = $(this);
             let nodeOffset = $node.offset();
             let nodeWidth = $node.outerWidth();
             let nodeHeight = $node.outerHeight();
-            
+
             if (nodeOffset.left >= lassoOffset.left &&
                 nodeOffset.top >= lassoOffset.top &&
                 (nodeOffset.left + nodeWidth) <= (lassoOffset.left + lassoWidth) &&
@@ -297,24 +304,24 @@ $(document).ready(function() {
             }
           });
         }
-        
+
         $lasso.remove();
         $(document).off("mousemove.lasso mouseup.lasso");
       });
-      
+
       ev.preventDefault();
       return;
     }
-    
+
     // Otherwise, clear selection and start panning
     if (ev.target.id === "canvas" || ev.target.id === "workflow" || ev.target.id === "svgOverlay") {
       $(".node").removeClass("selected");
       $(".anchor").removeClass("selected");
       removeContextMenu();
-      
+
       let panStartX = ev.pageX;
       let panStartY = ev.pageY;
-      
+
       $(document).on("mousemove.pan", function(ev2) {
         let dx = ev2.pageX - panStartX;
         let dy = ev2.pageY - panStartY;
@@ -326,7 +333,7 @@ $(document).ready(function() {
         panStartX = ev2.pageX;
         panStartY = ev2.pageY;
       });
-      
+
       $(document).on("mouseup.pan", function() {
         $(document).off("mousemove.pan mouseup.pan");
       });
@@ -336,25 +343,25 @@ $(document).ready(function() {
   // Handle mouse wheel for zooming
   $("#canvas").on("wheel", function(ev) {
     ev.preventDefault();
-    
+
     let canvasOffset = $("#canvas").offset();
     let mouseX = ev.pageX - canvasOffset.left;
     let mouseY = ev.pageY - canvasOffset.top;
     let oldZoom = zoom;
     let delta = ev.originalEvent.deltaY;
     let zoomFactor = delta > 0 ? 0.9 : 1.1;
-    
+
     zoom *= zoomFactor;
     zoom = Math.min(maxZoom, Math.max(minZoom, zoom));
-    
+
     // Adjust pan to keep mouse position stable during zoom
     panX = panX - (zoom - oldZoom) * (mouseX - panX) / oldZoom;
     panY = panY - (zoom - oldZoom) * (mouseY - panY) / oldZoom;
-    
+
     window.zoom = zoom;
     window.panX = panX;
     window.panY = panY;
-    
+
     updateWorkflowTransform();
   });
 
@@ -362,7 +369,7 @@ $(document).ready(function() {
   $(document).on("keydown", function(ev) {
     if (ev.key === "Delete" || ev.keyCode === 46) {
       saveDeletionState();
-      
+
       $(".node.selected").each(function() {
         let nodeId = $(this).data("id");
         window.wires = window.wires.filter(function(w) {
@@ -374,9 +381,18 @@ $(document).ready(function() {
         });
         $(this).remove();
       });
-      
+
       console.log("Deletion event: Nodes deleted.");
       ev.preventDefault();
+    }
+  });
+
+  // Handle browser close/refresh with unsaved changes warning
+  window.addEventListener("beforeunload", function(e) {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+      return e.returnValue;
     }
   });
 

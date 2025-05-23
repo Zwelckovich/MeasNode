@@ -116,6 +116,11 @@
       color: white;
     }
 
+    #projectButton {
+      background-color: #9c27b0;
+      color: white;
+    }
+
     #startBtn {
       background: var(--btn-start-color);
       color: white;
@@ -257,8 +262,9 @@
       right: 12px;
     }
 
-    /* Library Popup with Tree Menu styling */
-    #libraryPopup {
+    /* Library and Project Popup styling */
+    #libraryPopup,
+    #projectPopup {
       position: fixed;
       width: 250px;
       height: 90%;
@@ -269,21 +275,24 @@
       border-radius: 4px;
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
-    
-    /* Apply flex layout when library is visible */
-    #libraryPopup.visible {
+
+    /* Apply flex layout when popup is visible */
+    #libraryPopup.visible,
+    #projectPopup.visible {
       display: flex;
       flex-direction: column;
     }
 
-    #library-header {
+    #library-header,
+    #project-header {
       display: flex;
       flex-direction: column;
       padding: 10px;
       border-bottom: 1px solid #555;
     }
 
-    #closeLibraryPopup {
+    #closeLibraryPopup,
+    #closeProjectPopup {
       text-align: right;
       cursor: pointer;
       margin-bottom: 8px;
@@ -291,12 +300,42 @@
       font-weight: bold;
     }
 
+    /* Project buttons container */
+    #projectButtons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+
+    .project-btn {
+      padding: 4px 6px;
+      border: none;
+      border-radius: 3px;
+      background-color: #666;
+      color: white;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .project-btn:hover:not(.disabled) {
+      background-color: #777;
+    }
+
+    .project-btn.disabled {
+      background-color: #444;
+      color: #888;
+      cursor: not-allowed;
+    }
+
     #searchContainer {
       position: relative;
       margin-bottom: 5px;
     }
 
-    #nodeSearch {
+    #nodeSearch,
+    #projectSearch {
       width: 100%;
       padding: 6px 28px 6px 8px;
       border-radius: 4px;
@@ -306,11 +345,13 @@
       font-size: 13px;
     }
 
-    #nodeSearch::placeholder {
+    #nodeSearch::placeholder,
+    #projectSearch::placeholder {
       color: var(--search-placeholder-color);
     }
 
-    #clearSearch {
+    #clearSearch,
+    #clearProjectSearch {
       position: absolute;
       right: 0;
       top: 0;
@@ -323,11 +364,13 @@
       cursor: pointer;
     }
 
-    #clearSearch:hover {
+    #clearSearch:hover,
+    #clearProjectSearch:hover {
       color: #fff;
     }
 
-    #libraryTree {
+    #libraryTree,
+    #projectTree {
       flex: 1;
       overflow-y: auto;
       padding: 5px;
@@ -399,11 +442,26 @@
       font-weight: bold;
     }
 
-    .no-results {
+    .no-results,
+    .no-projects {
       padding: 10px;
       text-align: center;
       color: #888;
       font-style: italic;
+    }
+
+    /* Project-specific styles */
+    .project-category.selected > .tree-folder {
+      background-color: rgba(156, 39, 176, 0.3);
+    }
+
+    .workflow-item.selected {
+      background-color: rgba(156, 39, 176, 0.5);
+      border-color: #9c27b0;
+    }
+
+    .workflow-item {
+      cursor: pointer;
     }
 
     /* Context Menu styling */
@@ -469,10 +527,11 @@
 </head>
 
 <body>
-  <!-- Sidebar with Library, Start, and Log buttons -->
+  <!-- Sidebar with Library, Project, Start, and Log buttons -->
   <div id="sidebar">
     <div id="sidebarButtons">
       <button id="libraryButton" class="sidebar-button">Library</button>
+      <button id="projectButton" class="sidebar-button">Projects</button>
       <button id="startBtn" class="sidebar-button">Start</button>
     </div>
     <button id="logButton" class="sidebar-button" title="Show Log">&#128221;</button>

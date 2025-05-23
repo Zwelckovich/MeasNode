@@ -6,6 +6,7 @@ import json
 import time
 import logging
 import queue
+from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request
 
 app = Flask(__name__)
@@ -108,6 +109,215 @@ def api_nodes():
             }
         )
     return jsonify(definitions)
+
+
+# ---------------- API Endpoint: /api/projects (GET) ------------------
+@app.route("/api/projects", methods=["GET"])
+def api_get_projects():
+    """
+    Returns a JSON array of all projects with their workflows.
+    Each project includes:
+      - name: project name (folder name)
+      - workflows: array of workflow filenames
+    """
+    projects = []
+    projects_dir = Path("projects")
+
+    # Create projects directory if it doesn't exist
+    projects_dir.mkdir(exist_ok=True)
+
+    try:
+        # Scan each subdirectory in projects folder
+        for project_folder in projects_dir.iterdir():
+            if project_folder.is_dir():
+                workflows = []
+                # Find all .json files in the project folder
+                for workflow_file in project_folder.glob("*.json"):
+                    workflows.append(workflow_file.name)
+
+                projects.append({
+                    "name": project_folder.name,
+                    "workflows": sorted(workflows)
+                })
+
+        # Sort projects by name
+        projects.sort(key=lambda x: x["name"])
+        return jsonify(projects)
+
+    except Exception as e:
+        logging.error(f"Error loading projects: {e}")
+        return jsonify({"error": "Failed to load projects"}), 500
+
+
+# ---------------- API Endpoint: /api/projects (POST) ------------------
+@app.route("/api/projects", methods=["POST"])
+def api_create_project():
+    """
+    Creates a new project folder.
+    Expects JSON payload with:
+      - name: project name
+    """
+    try:
+        data = request.json
+        project_name = data.get("name", "").strip()
+
+        if not project_name:
+            return jsonify({"error": "Project name is required"}), 400
+
+        # Validate project name (basic validation)
+        if not project_name.replace("_", "").replace("-", "").replace(" ", "").isalnum():
+            return jsonify({"error": "Invalid project name"}), 400
+
+        projects_dir = Path("projects")
+        projects_dir.mkdir(exist_ok=True)
+
+        project_path = projects_dir / project_name
+
+        # Check if project already exists
+        if project_path.exists():
+            return jsonify({"error": "Project already exists"}), 409
+
+        # Create project directory
+        project_path.mkdir()
+
+        logging.info(f"Created project: {project_name}")
+        return jsonify({"message": "Project created successfully", "name": project_name})
+
+    except Exception as e:
+        logging.error(f"Error creating project: {e}")
+        return jsonify({"error": "Failed to create project"}), 500
+
+
+# ---------------- API Endpoint: /api/workflows (POST) ------------------
+@app.route("/api/workflows", methods=["POST"])
+def api_create_workflow():
+    """
+    Creates a new empty workflow file.
+    Expects JSON payload with:
+      - project: project name
+      - name: workflow name
+    """
+    try:
+        data = request.json
+        project_name = data.get("project", "").strip()
+        workflow_name = data.get("name", "").strip()
+
+        if not project_name or not workflow_name:
+            return jsonify({"error": "Project and workflow name are required"}), 400
+
+        projects_dir = Path("projects")
+        project_path = projects_dir / project_name
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Add .json extension if not present
+        if not workflow_name.endswith(".json"):
+            workflow_name += ".json"
+
+        workflow_path = project_path / workflow_name
+
+        # Check if workflow already exists
+        if workflow_path.exists():
+            return jsonify({"error": "Workflow already exists"}), 409
+
+        # Create empty workflow
+        empty_workflow = {
+            "nodes": [],
+            "wires": []
+        }
+
+        with open(workflow_path, "w") as f:
+            json.dump(empty_workflow, f, indent=2)
+
+        logging.info(f"Created workflow: {workflow_name} in project: {project_name}")
+        return jsonify({"message": "Workflow created successfully", "name": workflow_name})
+
+    except Exception as e:
+        logging.error(f"Error creating workflow: {e}")
+        return jsonify({"error": "Failed to create workflow"}), 500
+
+
+# ---------------- API Endpoint: /api/workflows/save (POST) ------------------
+@app.route("/api/workflows/save", methods=["POST"])
+def api_save_workflow():
+    """
+    Saves workflow data to a file.
+    Expects JSON payload with:
+      - project: project name
+      - workflow: workflow filename
+      - data: workflow data (nodes, wires, etc.)
+    """
+    try:
+        data = request.json
+        project_name = data.get("project", "").strip()
+        workflow_name = data.get("workflow", "").strip()
+        workflow_data = data.get("data", {})
+
+        if not project_name or not workflow_name:
+            return jsonify({"error": "Project and workflow name are required"}), 400
+
+        projects_dir = Path("projects")
+        project_path = projects_dir / project_name
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Add .json extension if not present
+        if not workflow_name.endswith(".json"):
+            workflow_name += ".json"
+
+        workflow_path = project_path / workflow_name
+
+        # Save workflow data
+        with open(workflow_path, "w") as f:
+            json.dump(workflow_data, f, indent=2)
+
+        logging.info(f"Saved workflow: {workflow_name} in project: {project_name}")
+        return jsonify({"message": "Workflow saved successfully"})
+
+    except Exception as e:
+        logging.error(f"Error saving workflow: {e}")
+        return jsonify({"error": "Failed to save workflow"}), 500
+
+
+# ---------------- API Endpoint: /api/workflows/<project>/<workflow> (GET) ------------------
+@app.route("/api/workflows/<project>/<workflow>", methods=["GET"])
+def api_load_workflow(project, workflow):
+    """
+    Loads workflow data from a file.
+    Returns the workflow JSON data.
+    """
+    try:
+        projects_dir = Path("projects")
+        project_path = projects_dir / project
+
+        # Check if project exists
+        if not project_path.exists():
+            return jsonify({"error": "Project does not exist"}), 404
+
+        # Add .json extension if not present
+        if not workflow.endswith(".json"):
+            workflow += ".json"
+
+        workflow_path = project_path / workflow
+
+        # Check if workflow exists
+        if not workflow_path.exists():
+            return jsonify({"error": "Workflow does not exist"}), 404
+
+        # Load workflow data
+        with open(workflow_path, "r") as f:
+            workflow_data = json.load(f)
+
+        logging.info(f"Loaded workflow: {workflow} from project: {project}")
+        return jsonify(workflow_data)
+
+    except Exception as e:
+        logging.error(f"Error loading workflow: {e}")
+        return jsonify({"error": "Failed to load workflow"}), 500
 
 
 # ---------------- API Endpoint: /api/execute (POST) ------------------

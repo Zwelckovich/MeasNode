@@ -86,8 +86,8 @@ export function initLibrary() {
           $libraryTree.append($categoryItem);
         });
 
-        // Toggle folders when clicked
-        $(".tree-toggle, .tree-folder-icon, .tree-folder-name").on("click", function () {
+        // Toggle folders when clicked - make the entire tree-folder div clickable
+        $("#libraryPopup .tree-folder").on("click", function () {
           const $category = $(this).closest(".tree-category");
           const $toggle = $category.find(".tree-toggle");
           const $items = $category.find(".tree-items");
@@ -116,8 +116,17 @@ export function initLibrary() {
       console.error("Error loading node definitions:", textStatus, errorThrown);
     });
 
-  // Show/hide library popup
+  // Show/hide library popup with toggle behavior
   $("#libraryButton").on("click", function () {
+    // If library popup is already visible, hide it instead
+    if ($("#libraryPopup").hasClass("visible")) {
+      $("#libraryPopup").removeClass("visible");
+      return;
+    }
+
+    // Close project popup if open
+    $("#projectPopup").removeClass("visible");
+
     let sidebarOffset = $("#sidebar").offset();
     let sidebarWidth = $("#sidebar").outerWidth(true);
 
@@ -151,13 +160,13 @@ function setupSearch() {
 
     if (searchTerm === "") {
       // Reset the tree view when search is empty
-      $(".tree-category").show();
-      $(".tree-item").show();
-      $(".tree-items").hide();
-      $(".tree-toggle").text("▶");
+      $("#libraryPopup .tree-category").show();
+      $("#libraryPopup .tree-item").show();
+      $("#libraryPopup .tree-items").hide();
+      $("#libraryPopup .tree-toggle").text("▶");
 
       // Reset any highlighting
-      $(".tree-node-name").each(function () {
+      $("#libraryPopup .tree-node-name").each(function () {
         $(this).text($(this).text());
       });
 
@@ -166,8 +175,8 @@ function setupSearch() {
 
     let hasResults = false;
 
-    // Loop through each category
-    $(".tree-category").each(function () {
+    // Loop through each category in library popup only
+    $("#libraryPopup .tree-category").each(function () {
       const $category = $(this);
       const $items = $category.find(".tree-item");
       let categoryHasMatches = false;

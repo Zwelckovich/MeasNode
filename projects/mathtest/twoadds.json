@@ -1,0 +1,119 @@
+{
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "Integer Node",
+      "position": {
+        "x": 330,
+        "y": 169
+      },
+      "parameters": {
+        "value": "42"
+      }
+    },
+    {
+      "id": "node_2",
+      "type": "Integer Node",
+      "position": {
+        "x": 339,
+        "y": 352
+      },
+      "parameters": {
+        "value": "42"
+      }
+    },
+    {
+      "id": "node_3",
+      "type": "BasicMath Node",
+      "position": {
+        "x": 702,
+        "y": 247
+      },
+      "parameters": {
+        "operation": "add"
+      }
+    },
+    {
+      "id": "node_4",
+      "type": "Result Node",
+      "position": {
+        "x": 1138,
+        "y": 288
+      },
+      "parameters": {
+        "result": "84"
+      }
+    },
+    {
+      "id": "node_9",
+      "type": "BasicMath Node",
+      "position": {
+        "x": 1040,
+        "y": 481
+      },
+      "parameters": {
+        "operation": "add"
+      }
+    },
+    {
+      "id": "node_10",
+      "type": "Integer Node",
+      "position": {
+        "x": 632,
+        "y": 603
+      },
+      "parameters": {
+        "value": "42"
+      }
+    },
+    {
+      "id": "node_11",
+      "type": "Result Node",
+      "position": {
+        "x": 1452,
+        "y": 604
+      },
+      "parameters": {
+        "result": "126"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "fromNode": "node_1",
+      "fromAnchor": "output",
+      "toNode": "node_3",
+      "toAnchor": "a"
+    },
+    {
+      "fromNode": "node_2",
+      "fromAnchor": "output",
+      "toNode": "node_3",
+      "toAnchor": "b"
+    },
+    {
+      "fromNode": "node_3",
+      "fromAnchor": "output",
+      "toNode": "node_4",
+      "toAnchor": "input"
+    },
+    {
+      "fromNode": "node_10",
+      "fromAnchor": "output",
+      "toNode": "node_9",
+      "toAnchor": "b"
+    },
+    {
+      "fromNode": "node_3",
+      "fromAnchor": "output",
+      "toNode": "node_9",
+      "toAnchor": "a"
+    },
+    {
+      "fromNode": "node_9",
+      "fromAnchor": "output",
+      "toNode": "node_11",
+      "toAnchor": "input"
+    }
+  ]
+}
