@@ -30,7 +30,7 @@ class Node(BaseNode):
         op = self.parameters.get("operation", "add")
         try:
             if op == "add":
-                time.sleep(3)
+                time.sleep(0.2)
                 return a + b
             elif op == "subtract":
                 return a - b

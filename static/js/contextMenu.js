@@ -127,9 +127,6 @@ function deleteNode($node) {
   $node.remove();
 }
 
-// Export functions
-export { showContextMenu, showAnchorContextMenu, showCanvasContextMenu, removeContextMenu };
-
 // Close context menu when clicking outside
 $(document).on("mousedown", function(ev) {
   if (!$(ev.target).closest(".context-menu").length) {

@@ -1,4 +1,4 @@
-// loopregion.js - Loop region functionality for visual programming
+// loopregion.js - Loop region functionality with dynamic bounds
 const $ = window.jQuery || window.$;
 
 // Global loop regions storage
@@ -56,6 +56,58 @@ export class LoopRegion {
       width: maxX - minX + padding * 2,
       height: maxY - minY + padding * 2 + headerHeight
     };
+  }
+
+  // Update bounds and reposition the visual element
+  updateBounds() {
+    this.bounds = this.calculateBounds();
+    if (this.$element) {
+      this.$element.css({
+        left: this.bounds.x,
+        top: this.bounds.y,
+        width: this.bounds.width,
+        height: this.bounds.height
+      });
+    }
+  }
+
+  // Check if a point is inside this loop region
+  containsPoint(x, y) {
+    return x >= this.bounds.x &&
+           x <= this.bounds.x + this.bounds.width &&
+           y >= this.bounds.y &&
+           y <= this.bounds.y + this.bounds.height;
+  }
+
+  // Check if a node is inside this loop region visually
+  containsNode(nodeId) {
+    const $node = window.nodes[nodeId];
+    if (!$node) return false;
+
+    const pos = $node.position();
+    const centerX = pos.left + $node.outerWidth() / 2;
+    const centerY = pos.top + $node.outerHeight() / 2;
+
+    return this.containsPoint(centerX, centerY);
+  }
+
+  // Add a node to this loop region
+  addNode(nodeId) {
+    if (!this.nodes.includes(nodeId)) {
+      this.nodes.push(nodeId);
+      this.updateBounds();
+      this.analyzeConnections();
+    }
+  }
+
+  // Remove a node from this loop region
+  removeNode(nodeId) {
+    const index = this.nodes.indexOf(nodeId);
+    if (index > -1) {
+      this.nodes.splice(index, 1);
+      this.updateBounds();
+      this.analyzeConnections();
+    }
   }
 
   analyzeConnections() {
@@ -296,3 +348,44 @@ export function createLoopRegion(selectedNodeIds) {
 
   return region;
 }
+
+// Global function to update all loop regions when nodes move
+window.updateLoopRegions = function() {
+  if (!window.loopRegions) return;
+
+  Object.values(window.loopRegions).forEach(region => {
+    // Check if any nodes have moved out of their current regions
+    const nodesToRemove = [];
+    region.nodes.forEach(nodeId => {
+      if (!region.containsNode(nodeId)) {
+        nodesToRemove.push(nodeId);
+      }
+    });
+
+    // Remove nodes that are no longer inside
+    nodesToRemove.forEach(nodeId => {
+      region.removeNode(nodeId);
+    });
+
+    // Check for nodes that might have moved into this region
+    Object.keys(window.nodes).forEach(nodeId => {
+      if (!region.nodes.includes(nodeId) && region.containsNode(nodeId)) {
+        // Check if this node is already in another region
+        let inOtherRegion = false;
+        Object.values(window.loopRegions).forEach(otherRegion => {
+          if (otherRegion.id !== region.id && otherRegion.nodes.includes(nodeId)) {
+            inOtherRegion = true;
+          }
+        });
+
+        // Only add if not in another region
+        if (!inOtherRegion) {
+          region.addNode(nodeId);
+        }
+      }
+    });
+
+    // Update bounds
+    region.updateBounds();
+  });
+};

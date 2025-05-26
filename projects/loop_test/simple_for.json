@@ -1,0 +1,80 @@
+{
+  "nodes": [
+    {
+      "id": "node_8",
+      "type": "Integer Node",
+      "position": {
+        "x": 438,
+        "y": 248
+      },
+      "parameters": {
+        "value": "5"
+      }
+    },
+    {
+      "id": "node_9",
+      "type": "Integer Node",
+      "position": {
+        "x": 822,
+        "y": 384
+      },
+      "parameters": {
+        "value": "1"
+      }
+    },
+    {
+      "id": "node_10",
+      "type": "BasicMath Node",
+      "position": {
+        "x": 1076,
+        "y": 278
+      },
+      "parameters": {
+        "operation": "add"
+      }
+    },
+    {
+      "id": "node_11",
+      "type": "Result Node",
+      "position": {
+        "x": 1551,
+        "y": 324
+      },
+      "parameters": {
+        "result": ""
+      }
+    }
+  ],
+  "wires": [
+    {
+      "fromNode": "node_8",
+      "fromAnchor": "output",
+      "toNode": "node_10",
+      "toAnchor": "a"
+    },
+    {
+      "fromNode": "node_9",
+      "fromAnchor": "output",
+      "toNode": "node_10",
+      "toAnchor": "b"
+    },
+    {
+      "fromNode": "node_10",
+      "fromAnchor": "output",
+      "toNode": "node_11",
+      "toAnchor": "input"
+    }
+  ],
+  "loops": [
+    {
+      "id": "loop_1",
+      "nodes": [
+        "node_9",
+        "node_10"
+      ],
+      "type": "for",
+      "iterations": 5,
+      "condition": null
+    }
+  ]
+}
