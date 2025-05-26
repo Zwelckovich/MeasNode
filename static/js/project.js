@@ -457,6 +457,7 @@ function restoreSelectionState() {
 function getCurrentWorkflowData() {
   const nodes = [];
   const wires = [];
+  const loops = [];
 
   // Collect node data
   $(".node").each(function() {
@@ -494,7 +495,20 @@ function getCurrentWorkflowData() {
     });
   });
 
-  return { nodes, wires };
+  // Collect loop regions
+  if (window.loopRegions) {
+    Object.values(window.loopRegions).forEach(region => {
+      loops.push({
+        id: region.id,
+        nodes: region.nodes,
+        type: region.type,
+        iterations: region.iterations,
+        condition: region.condition
+      });
+    });
+  }
+
+  return { nodes, wires, loops };
 }
 
 /**
@@ -522,6 +536,29 @@ function loadWorkflowData(workflowData) {
   workflowData.wires.forEach(wireData => {
     createWireFromData(wireData);
   });
+
+  // Load loop regions if present
+  if (workflowData.loops && workflowData.loops.length > 0) {
+    // Import LoopRegion class if needed
+    import('./loopregion.js').then(({ LoopRegion }) => {
+      workflowData.loops.forEach(loopData => {
+        const region = new LoopRegion({
+          id: loopData.id,
+          nodes: loopData.nodes,
+          type: loopData.type,
+          iterations: loopData.iterations,
+          condition: loopData.condition
+        });
+
+        // Store globally
+        window.loopRegions[region.id] = region;
+
+        // Render and add to workflow
+        const $element = region.render();
+        $('#workflow').append($element);
+      });
+    });
+  }
 }
 
 /**
@@ -532,6 +569,7 @@ function clearWorkflow() {
   $("#workflow").append('<svg id="svgOverlay"></svg>');
   window.wires = [];
   window.nodes = {};
+  window.loopRegions = {};
 }
 
 /**

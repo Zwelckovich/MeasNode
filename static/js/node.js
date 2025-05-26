@@ -9,8 +9,8 @@ import {
 // Ensure the global nodes object exists
 window.nodes = window.nodes || {};
 
-// Global object to store node definitions from the backend
-export let nodeDefinitions = {};
+// Use the global nodeDefinitions object populated by library.js
+export const nodeDefinitions = window.nodeDefinitions || {};
 
 // Layout constants from CSS variables
 const titleHeight = getCssVarNumber("node-title-height", 30);

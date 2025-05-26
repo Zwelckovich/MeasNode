@@ -31,6 +31,50 @@ export function showContextMenu(x, y, $node) {
 }
 
 /**
+ * Shows a context menu for the canvas with options for selected nodes
+ * @param {number} x - X position for menu
+ * @param {number} y - Y position for menu
+ * @param {jQuery} $selectedNodes - The selected node elements
+ */
+export function showCanvasContextMenu(x, y, $selectedNodes) {
+  removeContextMenu();
+
+  let $menu = $(`
+    <div class="context-menu">
+      <ul>
+        <li id="createLoop">Create Loop Region</li>
+        <li id="deleteSelected">Delete Selected</li>
+      </ul>
+    </div>
+  `);
+  $menu.css({ left: x, top: y });
+  $("body").append($menu);
+
+  $menu.find("#createLoop").on("click", async function() {
+    // Get selected node IDs
+    const selectedIds = [];
+    $selectedNodes.each(function() {
+      selectedIds.push($(this).data("id"));
+    });
+
+    // Import createLoopRegion function
+    const { createLoopRegion } = await import('./loopregion.js');
+    createLoopRegion(selectedIds);
+
+    removeContextMenu();
+  });
+
+  $menu.find("#deleteSelected").on("click", function() {
+    if (confirm(`Delete ${$selectedNodes.length} selected nodes?`)) {
+      $selectedNodes.each(function() {
+        deleteNode($(this));
+      });
+    }
+    removeContextMenu();
+  });
+}
+
+/**
  * Shows a context menu for an anchor with wire delete option
  * @param {number} x - X position for menu
  * @param {number} y - Y position for menu
@@ -47,7 +91,7 @@ export function showAnchorContextMenu(x, y, $anchor, connection) {
   `);
   $menu.css({ left: x, top: y });
   $("body").append($menu);
-  
+
   $menu.find("#deleteWire").on("click", function() {
     window.wires = window.wires.filter(function(w) {
       if (w === connection) {
@@ -82,6 +126,9 @@ function deleteNode($node) {
   });
   $node.remove();
 }
+
+// Export functions
+export { showContextMenu, showAnchorContextMenu, showCanvasContextMenu, removeContextMenu };
 
 // Close context menu when clicking outside
 $(document).on("mousedown", function(ev) {

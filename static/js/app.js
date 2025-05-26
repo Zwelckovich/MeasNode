@@ -2,19 +2,22 @@ import { initLibrary } from "./library.js";
 import { addNode, nodeDefinitions, updateWiresForNode } from "./node.js";
 import { initWiring } from "./wiring.js";
 import { makeDraggable } from "./dragdrop.js";
-import { showContextMenu, showAnchorContextMenu, removeContextMenu } from "./contextMenu.js";
+import { showContextMenu, showAnchorContextMenu, removeContextMenu, showCanvasContextMenu } from "./contextMenu.js";
 import { updateWirePath, getCssVarNumber, getMouseWFCoordinates, clientToLogical, getAnchorCenter } from "./utils.js";
 import { initProject, hasUnsavedChanges } from "./project.js";
+import { createLoopRegion } from "./loopregion.js";
 
 // Expose context menu functions globally
 window.showContextMenu = showContextMenu;
 window.showAnchorContextMenu = showAnchorContextMenu;
 window.removeContextMenu = removeContextMenu;
+window.showCanvasContextMenu = showCanvasContextMenu;
 
 // Expose functions globally for project system
 window.addNode = addNode;
 window.getAnchorCenter = getAnchorCenter;
 window.updateWirePath = updateWirePath;
+window.updateWiresForNode = updateWiresForNode;
 
 // Global variables for nodes, wiring, and node definitions
 window.nodeCounter = 0;
@@ -62,7 +65,7 @@ function logDeletionUndoStack(action) {
  * @returns {Object} State object containing nodes and wires
  */
 function getWorkflowState() {
-  let state = { nodes: [], wires: [] };
+  let state = { nodes: [], wires: [], loops: [] };
 
   // Capture all nodes with their positions and parameters
   $(".node").each(function() {
@@ -94,6 +97,19 @@ function getWorkflowState() {
     toAnchor: w.toAnchor
   }));
 
+  // Capture all loop regions
+  if (window.loopRegions) {
+    Object.values(window.loopRegions).forEach(region => {
+      state.loops.push({
+        id: region.id,
+        nodes: region.nodes,
+        type: region.type,
+        iterations: region.iterations,
+        condition: region.condition
+      });
+    });
+  }
+
   return state;
 }
 
@@ -108,6 +124,7 @@ function restoreWorkflowState(state) {
 
   window.wires = [];
   window.nodes = {};
+  window.loopRegions = {};
 
   // Recreate nodes
   state.nodes.forEach(n => {
@@ -127,6 +144,28 @@ function restoreWorkflowState(state) {
   state.wires.forEach(wireData => {
     createWireFromData(wireData);
   });
+
+  // Recreate loop regions
+  if (state.loops && state.loops.length > 0) {
+    import('./loopregion.js').then(({ LoopRegion }) => {
+      state.loops.forEach(loopData => {
+        const region = new LoopRegion({
+          id: loopData.id,
+          nodes: loopData.nodes,
+          type: loopData.type,
+          iterations: loopData.iterations,
+          condition: loopData.condition
+        });
+
+        // Store globally
+        window.loopRegions[region.id] = region;
+
+        // Render and add to workflow
+        const $element = region.render();
+        $('#workflow').append($element);
+      });
+    });
+  }
 
   updateWorkflowTransform();
 }
@@ -340,6 +379,18 @@ $(document).ready(function() {
     }
   });
 
+  // Handle right-click on canvas for context menu
+  $("#canvas").on("contextmenu", function(ev) {
+    ev.preventDefault();
+
+    // Check if we have selected nodes
+    const $selectedNodes = $(".node.selected");
+    if ($selectedNodes.length > 0) {
+      // Show context menu with loop creation option
+      showCanvasContextMenu(ev.pageX, ev.pageY, $selectedNodes);
+    }
+  });
+
   // Handle mouse wheel for zooming
   $("#canvas").on("wheel", function(ev) {
     ev.preventDefault();
@@ -399,25 +450,25 @@ $(document).ready(function() {
   // Handle Start button click to execute workflow
   $("#startBtn").on("click", function() {
     $(".node").removeClass("processing");
-    
+
     // Build workflow data structure
-    let workflow = { nodes: [] };
+    let workflow = { nodes: [], loops: [] };
     let nodeConnections = {};
-    
+
     window.wires.forEach(function(w) {
       if (!nodeConnections[w.toNode]) {
         nodeConnections[w.toNode] = {};
       }
       nodeConnections[w.toNode][w.toAnchor] = w.fromNode;
     });
-    
+
     $(".node").each(function() {
       let $node = $(this);
       let type = $node.data("type");
       let id = $node.data("id");
       let parameters = {};
       let def = nodeDefinitions[type];
-      
+
       if (def && def.parameters && def.parameters.length > 0 && type !== "Result Node") {
         def.parameters.forEach(function(param) {
           if (param.type === "int" || param.type === "text") {
@@ -427,7 +478,7 @@ $(document).ready(function() {
           }
         });
       }
-      
+
       workflow.nodes.push({
         id: id,
         type: type,
@@ -435,9 +486,22 @@ $(document).ready(function() {
         connections: nodeConnections[id] || {}
       });
     });
-    
+
+    // Add loop regions to workflow
+    if (window.loopRegions) {
+      Object.values(window.loopRegions).forEach(region => {
+        workflow.loops.push({
+          id: region.id,
+          nodes: region.nodes,
+          type: region.type,
+          iterations: region.iterations,
+          condition: region.condition
+        });
+      });
+    }
+
     console.log("Workflow JSON:", workflow);
-    
+
     // Submit workflow to backend and handle streaming response
     fetch("/api/execute", {
       method: "POST",
@@ -448,16 +512,43 @@ $(document).ready(function() {
     .then(data => {
       const token = data.token;
       const eventSource = new EventSource(`/api/execute_stream?token=${token}`);
-      
+
       eventSource.onmessage = function(e) {
         console.log("SSE event:", e.data);
-        
+
         if (e.data.startsWith("PROCESSING")) {
           const parts = e.data.split(" ");
           const nodeId = parts[1];
           $(".node").removeClass("processing");
           $(".node[data-id='" + nodeId + "']").addClass("processing");
-        } 
+        }
+        else if (e.data.startsWith("LOOP_START")) {
+          const parts = e.data.split(" ");
+          const loopId = parts[1];
+          const iterations = parts[2];
+          const region = window.loopRegions[loopId];
+          if (region) {
+            region.updateProgress(0, iterations);
+          }
+        }
+        else if (e.data.startsWith("LOOP_ITERATION")) {
+          const parts = e.data.split(" ");
+          const loopId = parts[1];
+          const current = parseInt(parts[2]);
+          const total = parseInt(parts[3]);
+          const region = window.loopRegions[loopId];
+          if (region) {
+            region.updateProgress(current, total);
+          }
+        }
+        else if (e.data.startsWith("LOOP_END")) {
+          const parts = e.data.split(" ");
+          const loopId = parts[1];
+          const region = window.loopRegions[loopId];
+          if (region) {
+            region.clearProgress();
+          }
+        }
         else if (e.data.startsWith("END")) {
           try {
             const endData = JSON.parse(e.data.replace("END ", ""));

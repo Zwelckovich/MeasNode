@@ -602,6 +602,12 @@ def api_execute():
       - parameters: parameter values (as entered by the user)
       - connections: a mapping of input names to the source node IDs.
 
+    The workflow can also have a "loops" array defining loop regions:
+      - id: unique loop identifier
+      - nodes: array of node IDs inside the loop
+      - type: 'for' or 'while'
+      - iterations: number of iterations (for 'for' loops)
+
     This endpoint instantiates the nodes, sets up connections, recursively evaluates the nodes,
     and returns a unique token.
     The processing will be streamed via SSE at the /api/execute_stream endpoint.
@@ -612,6 +618,7 @@ def api_execute():
     def generate_progress():
         nodes = {}
         node_classes = load_node_modules()
+        loop_regions = workflow.get("loops", [])
 
         # Instantiate nodes.
         for node_data in workflow.get("nodes", []):
@@ -638,13 +645,15 @@ def api_execute():
         results = {}
         evaluated_nodes = {}  # Cache for memoization
 
-        def evaluate_node(node, evaluated=None):
+        def evaluate_node(node, evaluated=None, loop_context=None):
             """
             Recursively evaluates a node and its inputs using memoization to avoid redundant calculations.
+            Now supports loop contexts for nodes inside loop regions.
 
             Args:
                 node: The node to evaluate
                 evaluated: Dictionary of already evaluated nodes {node_id: result}
+                loop_context: Contains loop state if inside a loop region
 
             Returns:
                 The result of the node's execution
@@ -653,9 +662,21 @@ def api_execute():
             if evaluated is None:
                 evaluated = {}
 
-            # If this node has already been evaluated, return the cached result
-            if node.node_id in evaluated:
-                return evaluated[node.node_id]
+            # Check if node is in a loop region
+            node_loop_region = None
+            for region in loop_regions:
+                if node.node_id in region.get("nodes", []):
+                    node_loop_region = region
+                    break
+
+            # If node is in a loop but we're not in loop context, skip it
+            if node_loop_region and not loop_context:
+                return None
+
+            # If this node has already been evaluated in this context, return cached result
+            cache_key = f"{node.node_id}:{loop_context.get('iteration', 0) if loop_context else 'base'}"
+            if cache_key in evaluated:
+                return evaluated[cache_key]
 
             # Prepare inputs by evaluating input connections
             inputs = {}
@@ -663,8 +684,22 @@ def api_execute():
                 name = inp["name"]
                 if name in node.input_connections:
                     source_node, _ = node.input_connections[name]
-                    # Recursively evaluate the source node, passing the evaluation cache
-                    value = yield from evaluate_node(source_node, evaluated)
+
+                    # Check if source is in same loop context
+                    if loop_context and loop_context.get("region_id") == node_loop_region.get(
+                            "id") if node_loop_region else None:
+                        # Use loop state if available
+                        if source_node.node_id in loop_context.get("loop_state", {}):
+                            value = loop_context["loop_state"][source_node.node_id]
+                        else:
+                            value = yield from evaluate_node(source_node, evaluated, loop_context)
+                    else:
+                        # Source is outside loop - use cached external value
+                        if loop_context and source_node.node_id in loop_context.get("cached_externals", {}):
+                            value = loop_context["cached_externals"][source_node.node_id]
+                        else:
+                            value = yield from evaluate_node(source_node, evaluated)
+
                     inputs[name] = value
                 else:
                     # Default value if no connection
@@ -677,7 +712,7 @@ def api_execute():
             result = node.execute(**inputs)
 
             # Cache the result
-            evaluated[node.node_id] = result
+            evaluated[cache_key] = result
 
             # Add node to processing order
             processing_order.append(node.node_id)
@@ -687,10 +722,80 @@ def api_execute():
 
             return result
 
-        # Find all result nodes
-        result_nodes = [node for node in nodes.values() if node.title == "Result Node"]
+        def execute_loop_region(region, evaluated_base):
+            """Execute a loop region with proper state management."""
+            region_id = region.get("id")
+            region_nodes = region.get("nodes", [])
+            iterations = region.get("iterations", 1)
 
-        # Process each result node
+            yield f"data: LOOP_START {region_id} {iterations}\n\n"
+
+            # Cache external inputs (values from nodes outside the loop)
+            cached_externals = {}
+            for node_id in region_nodes:
+                node = nodes.get(node_id)
+                if node:
+                    for inp in node.inputs:
+                        name = inp["name"]
+                        if name in node.input_connections:
+                            source_node, _ = node.input_connections[name]
+                            if source_node.node_id not in region_nodes:
+                                # External input - evaluate once and cache
+                                if source_node.node_id not in cached_externals:
+                                    value = yield from evaluate_node(source_node, evaluated_base)
+                                    cached_externals[source_node.node_id] = value
+
+            # Execute iterations
+            loop_state = {}
+            for i in range(iterations):
+                yield f"data: LOOP_ITERATION {region_id} {i + 1} {iterations}\n\n"
+
+                loop_context = {
+                    "region_id": region_id,
+                    "iteration": i,
+                    "cached_externals": cached_externals,
+                    "loop_state": loop_state.copy()
+                }
+
+                # Execute nodes in the loop
+                iteration_results = {}
+                for node_id in region_nodes:
+                    if node_id in nodes:
+                        result = yield from evaluate_node(nodes[node_id], evaluated_base, loop_context)
+                        iteration_results[node_id] = result
+
+                # Update loop state for next iteration
+                loop_state.update(iteration_results)
+
+            yield f"data: LOOP_END {region_id}\n\n"
+
+            # Return final values (last iteration)
+            return loop_state
+
+        # Execute workflow with loop support
+        # First, execute any loop regions
+        for region in loop_regions:
+            loop_results = yield from execute_loop_region(region, evaluated_nodes)
+            # Store loop results in evaluated_nodes
+            for node_id, result in loop_results.items():
+                evaluated_nodes[f"{node_id}:base"] = result
+                results[node_id] = result
+
+        # Then find and process all result nodes (including those outside loops)
+        result_nodes = []
+        for node in nodes.values():
+            if node.title == "Result Node":
+                # Check if node is inside any loop
+                in_loop = False
+                for region in loop_regions:
+                    if node.node_id in region.get("nodes", []):
+                        in_loop = True
+                        break
+
+                if not in_loop:
+                    result_nodes.append(node)
+
+        # Process each result node outside loops
         for node in result_nodes:
             gen = evaluate_node(node, evaluated_nodes)
             try:
@@ -700,7 +805,8 @@ def api_execute():
                 results[node.node_id] = e.value
 
         # Include results for all evaluated nodes
-        for node_id, result in evaluated_nodes.items():
+        for key, result in evaluated_nodes.items():
+            node_id = key.split(":")[0]
             results[node_id] = result
 
         yield f"data: END {json.dumps({'order': processing_order, 'results': results})}\n\n"
